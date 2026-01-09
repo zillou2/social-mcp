@@ -190,12 +190,14 @@ async function handleToolCall(
           .single();
         profile = data;
       } else if (toolArgs.display_name) {
+        // Use order + limit to handle multiple profiles with same name (get most recent)
         const { data } = await supabase
           .from('profiles')
           .select('id, display_name, bio, location')
           .ilike('display_name', toolArgs.display_name)
-          .single();
-        profile = data;
+          .order('created_at', { ascending: false })
+          .limit(1);
+        profile = data?.[0] || null;
       }
 
       if (!profile) {
