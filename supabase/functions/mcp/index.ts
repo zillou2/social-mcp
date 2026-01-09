@@ -1,195 +1,120 @@
 // deno-lint-ignore-file no-explicit-any
+/**
+ * Social MCP Server - Streamable HTTP Transport
+ * 
+ * Implements MCP protocol for serverless (Supabase Edge Functions)
+ * Compatible with both legacy SSE (2024-11-05) and modern Streamable HTTP (2025-03-26)
+ * 
+ * Key insight: In stateless mode, POST responses are returned directly in the HTTP response
+ * rather than pushed over an SSE stream.
+ */
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { validateMcpApiKey, generateApiKey } from '../_shared/auth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-mcp-api-key, cache-control',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-mcp-api-key, cache-control, mcp-session-id, accept',
+  'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+  'Access-Control-Expose-Headers': 'mcp-session-id',
 };
 
-// Store for pending responses (in-memory, works for single instance)
-const pendingResponses = new Map<string, (response: unknown) => void>();
-
-// Process JSON-RPC request
-async function processRequest(body: unknown, supabase: any, apiKey: string | null) {
-  const { jsonrpc, id, method, params } = body as { jsonrpc: string; id: unknown; method: string; params?: Record<string, unknown> };
-
-  if (jsonrpc !== '2.0') {
-    return {
-      jsonrpc: '2.0',
-      id,
-      error: { code: -32600, message: 'Invalid Request: must use JSON-RPC 2.0' }
-    };
-  }
-
-  // Validate API key for authenticated requests
-  let profileId: string | null = null;
-  if (apiKey) {
-    const validation = await validateMcpApiKey(apiKey);
-    if (validation.valid) {
-      profileId = validation.profileId || null;
-    }
-  }
-
-  let result: unknown;
-
-  try {
-    switch (method) {
-      case 'initialize':
-        result = {
-          protocolVersion: '2024-11-05',
-          capabilities: {
-            tools: {},
-          },
-          serverInfo: {
-            name: 'social-mcp',
-            version: '1.0.0',
-          },
-        };
-        break;
-
-      case 'initialized':
-        // Client acknowledgment - no response needed
-        result = {};
-        break;
-
-      case 'tools/list':
-        result = {
-          tools: [
-            {
-              name: 'social_register',
-              description: 'Register or update your Social MCP profile. Required before using other features. Returns an API key for future requests.',
-              inputSchema: {
-                type: 'object',
-                properties: {
-                  display_name: { type: 'string', description: 'Your display name' },
-                  bio: { type: 'string', description: 'A brief bio about yourself' },
-                  location: { type: 'string', description: 'Your location (optional)' },
-                },
-                required: ['display_name', 'bio'],
-              },
-            },
-            {
-              name: 'social_set_intent',
-              description: 'Set what kind of connections you are looking for. Requires registration first.',
-              inputSchema: {
-                type: 'object',
-                properties: {
-                  category: {
-                    type: 'string',
-                    enum: ['professional', 'romance', 'friendship', 'expertise', 'sports', 'learning', 'other'],
-                    description: 'The category of connection',
-                  },
-                  description: { type: 'string', description: 'What you are looking for' },
-                  criteria: { type: 'object', description: 'Additional criteria (optional)' },
-                },
-                required: ['category', 'description'],
-              },
-            },
-            {
-              name: 'social_get_intents',
-              description: 'Get your current active intents. Requires registration first.',
-              inputSchema: { type: 'object', properties: {} },
-            },
-            {
-              name: 'social_get_matches',
-              description: 'Get your current matches and pending introductions. Requires registration first.',
-              inputSchema: { type: 'object', properties: {} },
-            },
-            {
-              name: 'social_respond_match',
-              description: 'Accept or reject a match introduction. Requires registration first.',
-              inputSchema: {
-                type: 'object',
-                properties: {
-                  match_id: { type: 'string', description: 'The match ID' },
-                  action: { type: 'string', enum: ['accept', 'reject'], description: 'Accept or reject' },
-                },
-                required: ['match_id', 'action'],
-              },
-            },
-            {
-              name: 'social_send_message',
-              description: 'Send a message to a matched user. Requires registration first.',
-              inputSchema: {
-                type: 'object',
-                properties: {
-                  match_id: { type: 'string', description: 'The match ID' },
-                  content: { type: 'string', description: 'Your message' },
-                },
-                required: ['match_id', 'content'],
-              },
-            },
-            {
-              name: 'social_get_messages',
-              description: 'Get chat history with a matched user. Requires registration first.',
-              inputSchema: {
-                type: 'object',
-                properties: {
-                  match_id: { type: 'string', description: 'The match ID' },
-                },
-                required: ['match_id'],
-              },
-            },
-            {
-              name: 'social_get_notifications',
-              description: 'Check for new notifications. Requires registration first.',
-              inputSchema: { type: 'object', properties: {} },
-            },
-          ],
-        };
-        break;
-
-      case 'tools/call':
-        result = await handleToolCall(params as { name: string; arguments?: Record<string, any> }, profileId, supabase);
-        break;
-
-      case 'notifications/list':
-        result = { notifications: [] };
-        break;
-
-      case 'resources/list':
-        result = { resources: [] };
-        break;
-
-      case 'prompts/list':
-        result = { prompts: [] };
-        break;
-
-      default:
-        return {
-          jsonrpc: '2.0',
-          id,
-          error: { code: -32601, message: `Method not found: ${method}` }
-        };
-    }
-
-    return { jsonrpc: '2.0', id, result };
-  } catch (error) {
-    console.error('MCP Error:', error);
-    return {
-      jsonrpc: '2.0',
-      id,
-      error: { code: -32603, message: error instanceof Error ? error.message : 'Internal error' }
-    };
-  }
-}
+// Tool definitions
+const TOOLS = [
+  {
+    name: 'social_register',
+    description: 'Register or update your Social MCP profile. Required before using other features. Returns an API key for future requests.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        display_name: { type: 'string', description: 'Your display name' },
+        bio: { type: 'string', description: 'A brief bio about yourself' },
+        location: { type: 'string', description: 'Your location (optional)' },
+      },
+      required: ['display_name', 'bio'],
+    },
+  },
+  {
+    name: 'social_set_intent',
+    description: 'Set what kind of connections you are looking for. Requires registration first.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        category: {
+          type: 'string',
+          enum: ['professional', 'romance', 'friendship', 'expertise', 'sports', 'learning', 'other'],
+          description: 'The category of connection',
+        },
+        description: { type: 'string', description: 'What you are looking for' },
+        criteria: { type: 'object', description: 'Additional criteria (optional)' },
+      },
+      required: ['category', 'description'],
+    },
+  },
+  {
+    name: 'social_get_intents',
+    description: 'Get your current active intents. Requires registration first.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'social_get_matches',
+    description: 'Get your current matches and pending introductions. Requires registration first.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'social_respond_match',
+    description: 'Accept or reject a match introduction. Requires registration first.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        match_id: { type: 'string', description: 'The match ID' },
+        action: { type: 'string', enum: ['accept', 'reject'], description: 'Accept or reject' },
+      },
+      required: ['match_id', 'action'],
+    },
+  },
+  {
+    name: 'social_send_message',
+    description: 'Send a message to a matched user. Requires registration first.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        match_id: { type: 'string', description: 'The match ID' },
+        content: { type: 'string', description: 'Your message' },
+      },
+      required: ['match_id', 'content'],
+    },
+  },
+  {
+    name: 'social_get_messages',
+    description: 'Get chat history with a matched user. Requires registration first.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        match_id: { type: 'string', description: 'The match ID' },
+      },
+      required: ['match_id'],
+    },
+  },
+  {
+    name: 'social_get_notifications',
+    description: 'Check for new notifications. Requires registration first.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+];
 
 // Handle tool calls
 async function handleToolCall(
-  params: { name: string; arguments?: Record<string, any> },
+  toolName: string,
+  toolArgs: Record<string, any>,
   profileId: string | null,
   supabase: any
-): Promise<any> {
-  const toolName = params.name;
-  const toolArgs: any = params.arguments || {};
-
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  
   switch (toolName) {
     case 'social_register': {
       const mcpClientId = `mcp_${Date.now()}_${Math.random().toString(36).substring(7)}`;
       
-      // Create new profile
       const { data: newProfile, error } = await supabase
         .from('profiles')
         .insert({
@@ -204,16 +129,13 @@ async function handleToolCall(
       if (error || !newProfile) throw new Error(`Failed to create profile: ${error?.message}`);
       const newProfileId = newProfile.id;
 
-      // Generate API key
       const { apiKey: newApiKey, keyHash } = await generateApiKey();
       
-      await supabase
-        .from('mcp_api_keys')
-        .insert({
-          profile_id: newProfileId,
-          key_hash: keyHash,
-          name: 'MCP Client Key',
-        });
+      await supabase.from('mcp_api_keys').insert({
+        profile_id: newProfileId,
+        key_hash: keyHash,
+        name: 'MCP Client Key',
+      });
 
       return {
         content: [{
@@ -228,14 +150,12 @@ async function handleToolCall(
         return { content: [{ type: 'text', text: '❌ Please register first using social_register, then include your API key in the x-mcp-api-key header.' }], isError: true };
       }
 
-      const { error } = await supabase
-        .from('intents')
-        .insert({
-          profile_id: profileId,
-          category: toolArgs.category,
-          description: toolArgs.description,
-          criteria: toolArgs.criteria || {},
-        });
+      const { error } = await supabase.from('intents').insert({
+        profile_id: profileId,
+        category: toolArgs.category,
+        description: toolArgs.description,
+        criteria: toolArgs.criteria || {},
+      });
 
       if (error) throw new Error(`Failed to create intent: ${error.message}`);
 
@@ -262,10 +182,9 @@ async function handleToolCall(
 
       if (!intents?.length) {
         return { content: [{ type: 'text', text: 'No active intents. Use social_set_intent to create one.' }] };
-      } else {
-        const list = intents.map((i: any) => `• ${i.category}: ${i.description}`).join('\n');
-        return { content: [{ type: 'text', text: `📋 Your intents:\n\n${list}` }] };
       }
+      const list = intents.map((i: any) => `• ${i.category}: ${i.description}`).join('\n');
+      return { content: [{ type: 'text', text: `📋 Your intents:\n\n${list}` }] };
     }
 
     case 'social_get_matches': {
@@ -275,31 +194,25 @@ async function handleToolCall(
 
       const { data: matches, error } = await supabase
         .from('matches')
-        .select(`
-          *,
-          profile_a:profiles!matches_profile_a_id_fkey(id, display_name, bio),
-          profile_b:profiles!matches_profile_b_id_fkey(id, display_name, bio),
-          intent_a:intents!matches_intent_a_id_fkey(category, description),
-          intent_b:intents!matches_intent_b_id_fkey(category, description)
-        `)
+        .select(`*, profile_a:profiles!matches_profile_a_id_fkey(id, display_name, bio), profile_b:profiles!matches_profile_b_id_fkey(id, display_name, bio), intent_a:intents!matches_intent_a_id_fkey(category, description), intent_b:intents!matches_intent_b_id_fkey(category, description)`)
         .or(`profile_a_id.eq.${profileId},profile_b_id.eq.${profileId}`);
 
       if (error) throw new Error(`Failed to get matches: ${error.message}`);
 
       if (!matches?.length) {
         return { content: [{ type: 'text', text: 'No matches yet. Keep your intents active!' }] };
-      } else {
-        const list = matches.map((m: any) => {
-          const isA = m.profile_a_id === profileId;
-          const otherProfile = isA ? m.profile_b : m.profile_a;
-          const theirIntent = isA ? m.intent_b : m.intent_a;
-          const score = Math.round(m.match_score * 100);
-          const statusEmoji = m.status === 'accepted' ? '🟢' : '🟡';
-          return `• **${otherProfile.display_name}** (${score}% match)\n  ${theirIntent.description}\n  Status: ${statusEmoji} ${m.status} | ID: ${m.id}`;
-        }).join('\n\n');
-
-        return { content: [{ type: 'text', text: `🤝 Matches:\n\n${list}` }] };
       }
+      
+      const list = matches.map((m: any) => {
+        const isA = m.profile_a_id === profileId;
+        const otherProfile = isA ? m.profile_b : m.profile_a;
+        const theirIntent = isA ? m.intent_b : m.intent_a;
+        const score = Math.round(m.match_score * 100);
+        const statusEmoji = m.status === 'accepted' ? '🟢' : '🟡';
+        return `• **${otherProfile.display_name}** (${score}% match)\n  ${theirIntent.description}\n  Status: ${statusEmoji} ${m.status} | ID: ${m.id}`;
+      }).join('\n\n');
+
+      return { content: [{ type: 'text', text: `🤝 Matches:\n\n${list}` }] };
     }
 
     case 'social_respond_match': {
@@ -325,11 +238,8 @@ async function handleToolCall(
           [updateField]: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
-
         const otherAccepted = isA ? match.b_accepted_at : match.a_accepted_at;
-        if (otherAccepted) {
-          updateData.status = 'accepted';
-        }
+        if (otherAccepted) updateData.status = 'accepted';
 
         await supabase.from('matches').update(updateData).eq('id', toolArgs.match_id);
         return { content: [{ type: 'text', text: otherAccepted ? '✅ Match accepted! You can now message each other.' : '✅ You accepted! Waiting for their response.' }] };
@@ -344,14 +254,12 @@ async function handleToolCall(
         return { content: [{ type: 'text', text: '❌ Please register first' }], isError: true };
       }
 
-      const { error } = await supabase
-        .from('messages')
-        .insert({
-          match_id: toolArgs.match_id,
-          sender_profile_id: profileId,
-          content: toolArgs.content,
-          message_type: 'text',
-        });
+      const { error } = await supabase.from('messages').insert({
+        match_id: toolArgs.match_id,
+        sender_profile_id: profileId,
+        content: toolArgs.content,
+        message_type: 'text',
+      });
 
       if (error) throw new Error(`Failed to send message: ${error.message}`);
       return { content: [{ type: 'text', text: '✉️ Message sent!' }] };
@@ -372,12 +280,11 @@ async function handleToolCall(
 
       if (!messages?.length) {
         return { content: [{ type: 'text', text: 'No messages yet. Start the conversation!' }] };
-      } else {
-        const list = messages.map((m: any) => 
-          `**${m.sender_profile_id === profileId ? 'You' : m.sender.display_name}**: ${m.content}`
-        ).join('\n');
-        return { content: [{ type: 'text', text: `💬 Chat:\n\n${list}` }] };
       }
+      const list = messages.map((m: any) => 
+        `**${m.sender_profile_id === profileId ? 'You' : m.sender.display_name}**: ${m.content}`
+      ).join('\n');
+      return { content: [{ type: 'text', text: `💬 Chat:\n\n${list}` }] };
     }
 
     case 'social_get_notifications': {
@@ -403,16 +310,15 @@ async function handleToolCall(
 
       if (!notifications?.length) {
         return { content: [{ type: 'text', text: '📭 No new notifications.' }] };
-      } else {
-        const list = notifications.map((n: any) => {
-          const icon = n.notification_type === 'new_match' ? '🎉' : 
-                      n.notification_type === 'match_accepted' ? '🤝' : 
-                      n.notification_type === 'new_message' ? '💬' : '📢';
-          return `${icon} ${n.notification_type.replace(/_/g, ' ')}`;
-        }).join('\n');
-
-        return { content: [{ type: 'text', text: `🔔 Notifications:\n\n${list}` }] };
       }
+      const list = notifications.map((n: any) => {
+        const icon = n.notification_type === 'new_match' ? '🎉' : 
+                    n.notification_type === 'match_accepted' ? '🤝' : 
+                    n.notification_type === 'new_message' ? '💬' : '📢';
+        return `${icon} ${n.notification_type.replace(/_/g, ' ')}`;
+      }).join('\n');
+
+      return { content: [{ type: 'text', text: `🔔 Notifications:\n\n${list}` }] };
     }
 
     default:
@@ -420,15 +326,73 @@ async function handleToolCall(
   }
 }
 
-// MCP Protocol Implementation
-// Due to Supabase Edge Function timeouts, we implement a hybrid approach:
-// - GET: Returns SSE with endpoint URL, but we also support direct POST responses
-// - POST: Handles JSON-RPC and returns response directly
+// Process JSON-RPC request
+async function processJsonRpc(
+  message: any,
+  supabase: any,
+  profileId: string | null
+): Promise<any> {
+  const { jsonrpc, id, method, params } = message;
 
+  if (jsonrpc !== '2.0') {
+    return { jsonrpc: '2.0', id, error: { code: -32600, message: 'Invalid Request' } };
+  }
+
+  try {
+    switch (method) {
+      case 'initialize':
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            protocolVersion: '2024-11-05',
+            capabilities: { tools: {} },
+            serverInfo: { name: 'social-mcp', version: '1.0.0' },
+          },
+        };
+
+      case 'initialized':
+        return { jsonrpc: '2.0', id, result: {} };
+
+      case 'tools/list':
+        return { jsonrpc: '2.0', id, result: { tools: TOOLS } };
+
+      case 'tools/call': {
+        const { name, arguments: args } = params || {};
+        const result = await handleToolCall(name, args || {}, profileId, supabase);
+        return { jsonrpc: '2.0', id, result };
+      }
+
+      case 'resources/list':
+        return { jsonrpc: '2.0', id, result: { resources: [] } };
+
+      case 'prompts/list':
+        return { jsonrpc: '2.0', id, result: { prompts: [] } };
+
+      case 'notifications/list':
+        return { jsonrpc: '2.0', id, result: { notifications: [] } };
+
+      case 'ping':
+        return { jsonrpc: '2.0', id, result: {} };
+
+      default:
+        return { jsonrpc: '2.0', id, error: { code: -32601, message: `Method not found: ${method}` } };
+    }
+  } catch (error) {
+    console.error('JSON-RPC error:', error);
+    return {
+      jsonrpc: '2.0',
+      id,
+      error: { code: -32603, message: error instanceof Error ? error.message : 'Internal error' },
+    };
+  }
+}
+
+// Main server handler
 Deno.serve(async (req) => {
   const url = new URL(req.url);
   
-  // Handle CORS preflight
+  // CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -438,55 +402,77 @@ Deno.serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
 
+  // Get API key for authenticated requests
   const apiKey = req.headers.get('x-mcp-api-key');
+  let profileId: string | null = null;
+  if (apiKey) {
+    const validation = await validateMcpApiKey(apiKey);
+    if (validation.valid) profileId = validation.profileId || null;
+  }
 
-  // SSE endpoint for MCP protocol (GET request initiates SSE stream)
+  // Session management
+  const incomingSessionId = req.headers.get('mcp-session-id');
+  const sessionId = incomingSessionId || crypto.randomUUID();
+
+  // ============================================================
+  // GET: SSE stream for legacy clients (2024-11-05 spec)
+  // Returns "endpoint" event pointing to this same URL for POSTs
+  // ============================================================
   if (req.method === 'GET') {
     const encoder = new TextEncoder();
-    const sessionId = crypto.randomUUID();
-    const postEndpoint = `${url.origin}${url.pathname}`;
     
-    // Create SSE stream with the endpoint message
-    const body = encoder.encode(`event: endpoint\ndata: ${postEndpoint}\n\n`);
+    // The endpoint event tells the client where to POST
+    // We point it to the same URL (this endpoint handles both)
+    const endpointUrl = url.href;
     
-    // For stateless operation, we just send the endpoint and let client POST directly
-    // The POST will return the response directly (not via SSE)
-    // This works because MCP SDK supports "stateless" SSE where POST returns inline
-    return new Response(body, {
+    // Create SSE response with endpoint event
+    const sseBody = `event: endpoint\ndata: ${endpointUrl}\n\n`;
+    
+    return new Response(encoder.encode(sseBody), {
       headers: {
         ...corsHeaders,
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
+        'Mcp-Session-Id': sessionId,
       },
     });
   }
 
-  // Handle JSON-RPC requests via POST
-  // In stateless mode, we return response directly in the POST response
+  // ============================================================
+  // POST: JSON-RPC handler
+  // Returns response directly (Streamable HTTP / stateless mode)
+  // ============================================================
   if (req.method === 'POST') {
     try {
       const body = await req.json();
-      console.log('Received MCP request:', JSON.stringify(body));
-      
-      const response = await processRequest(body, supabase, apiKey);
-      console.log('Sending MCP response:', JSON.stringify(response));
+      console.log('MCP Request:', JSON.stringify(body));
+
+      const response = await processJsonRpc(body, supabase, profileId);
+      console.log('MCP Response:', JSON.stringify(response));
 
       return new Response(JSON.stringify(response), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+          'Mcp-Session-Id': sessionId,
+        },
       });
-
     } catch (error) {
-      console.error('MCP Error:', error);
-      const errorResponse = {
+      console.error('Request error:', error);
+      return new Response(JSON.stringify({
         jsonrpc: '2.0',
         id: null,
-        error: { code: -32603, message: error instanceof Error ? error.message : 'Internal error' }
-      };
-      
-      return new Response(JSON.stringify(errorResponse), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        error: { code: -32700, message: 'Parse error' },
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+  }
+
+  // DELETE: Session termination
+  if (req.method === 'DELETE') {
+    return new Response(null, { status: 204, headers: corsHeaders });
   }
 
   return new Response(JSON.stringify({ error: 'Method not allowed' }), {
