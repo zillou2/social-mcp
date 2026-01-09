@@ -5,6 +5,7 @@ import { Hero } from '@/components/Hero';
 import { HowItWorks } from '@/components/HowItWorks';
 import { DemoFlow } from '@/components/DemoFlow';
 import { Features } from '@/components/Features';
+import { Installation } from '@/components/Installation';
 import { CTA } from '@/components/CTA';
 import { Footer } from '@/components/Footer';
 import { useToast } from '@/hooks/use-toast';
@@ -35,6 +36,7 @@ const Index = () => {
         <section id="features">
           <Features />
         </section>
+        <Installation />
         <CTA onGetStarted={handleGetStarted} />
       </main>
 
