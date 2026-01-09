@@ -23,7 +23,7 @@ const corsHeaders = {
 const TOOLS = [
   {
     name: 'social_register',
-    description: 'Register or update your Social MCP profile. Required before using other features. Returns an API key for future requests.',
+    description: 'Register a new Social MCP profile. Use social_login instead if you have registered before.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -35,8 +35,24 @@ const TOOLS = [
     },
   },
   {
+    name: 'social_login',
+    description: 'Log in to your existing Social MCP profile. Use this if you have registered before but are in a new session. You can login by display_name or profile_id.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        display_name: { type: 'string', description: 'Your display name (case-insensitive)' },
+        profile_id: { type: 'string', description: 'Your profile ID (if you know it)' },
+      },
+    },
+  },
+  {
+    name: 'social_whoami',
+    description: 'Check if you are currently logged in and see your profile info.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
     name: 'social_set_intent',
-    description: 'Set what kind of connections you are looking for. Requires registration first.',
+    description: 'Set what kind of connections you are looking for. Requires login first.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -53,17 +69,17 @@ const TOOLS = [
   },
   {
     name: 'social_get_intents',
-    description: 'Get your current active intents. Requires registration first.',
+    description: 'Get your current active intents. Requires login first.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'social_get_matches',
-    description: 'Get your current matches and pending introductions. Requires registration first.',
+    description: 'Get your current matches and pending introductions. Requires login first.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'social_respond_match',
-    description: 'Accept or reject a match introduction. Requires registration first.',
+    description: 'Accept or reject a match introduction. Requires login first.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -75,7 +91,7 @@ const TOOLS = [
   },
   {
     name: 'social_send_message',
-    description: 'Send a message to a matched user. Requires registration first.',
+    description: 'Send a message to a matched user. Requires login first.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -87,7 +103,7 @@ const TOOLS = [
   },
   {
     name: 'social_get_messages',
-    description: 'Get chat history with a matched user. Requires registration first.',
+    description: 'Get chat history with a matched user. Requires login first.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -98,7 +114,7 @@ const TOOLS = [
   },
   {
     name: 'social_get_notifications',
-    description: 'Check for new notifications. Requires registration first.',
+    description: 'Check for new notifications. Requires login first.',
     inputSchema: { type: 'object', properties: {} },
   },
 ];
@@ -162,9 +178,91 @@ async function handleToolCall(
       };
     }
 
+    case 'social_login': {
+      // Find profile by display_name or profile_id
+      let profile = null;
+      
+      if (toolArgs.profile_id) {
+        const { data } = await supabase
+          .from('profiles')
+          .select('id, display_name, bio, location')
+          .eq('id', toolArgs.profile_id)
+          .single();
+        profile = data;
+      } else if (toolArgs.display_name) {
+        const { data } = await supabase
+          .from('profiles')
+          .select('id, display_name, bio, location')
+          .ilike('display_name', toolArgs.display_name)
+          .single();
+        profile = data;
+      }
+
+      if (!profile) {
+        return {
+          content: [{
+            type: 'text',
+            text: '❌ Profile not found. Please check your display name or profile ID, or use social_register to create a new profile.',
+          }],
+          isError: true,
+        };
+      }
+
+      // Associate this session with the profile
+      if (sessionContext?.sessionId) {
+        await supabase.from('mcp_sessions').upsert({
+          session_id: sessionContext.sessionId,
+          profile_id: profile.id,
+          last_used_at: new Date().toISOString(),
+        }, { onConflict: 'session_id' });
+      }
+
+      return {
+        content: [{
+          type: 'text',
+          text: `✅ Logged in!\n\nWelcome back, ${profile.display_name}!\nProfile ID: ${profile.id}\nBio: ${profile.bio}\nLocation: ${profile.location || 'Not set'}\n\nYou can now use all social-mcp features.`,
+        }],
+        newProfileId: profile.id,
+      };
+    }
+
+    case 'social_whoami': {
+      if (!profileId) {
+        return {
+          content: [{
+            type: 'text',
+            text: '❓ Not logged in.\n\nUse social_login with your display_name to log in, or social_register to create a new profile.',
+          }],
+        };
+      }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id, display_name, bio, location, created_at')
+        .eq('id', profileId)
+        .single();
+
+      if (!profile) {
+        return {
+          content: [{
+            type: 'text',
+            text: '❌ Profile not found. Your session may be invalid.',
+          }],
+          isError: true,
+        };
+      }
+
+      return {
+        content: [{
+          type: 'text',
+          text: `👤 You are logged in as:\n\nDisplay Name: ${profile.display_name}\nProfile ID: ${profile.id}\nBio: ${profile.bio}\nLocation: ${profile.location || 'Not set'}\nMember since: ${new Date(profile.created_at).toLocaleDateString()}`,
+        }],
+      };
+    }
+
     case 'social_set_intent': {
       if (!profileId) {
-        return { content: [{ type: 'text', text: '❌ Please register first using social_register, then include your API key in the x-mcp-api-key header.' }], isError: true };
+        return { content: [{ type: 'text', text: '❌ Not logged in. Use social_login with your display_name first.' }], isError: true };
       }
 
       const { error } = await supabase.from('intents').insert({
@@ -186,7 +284,7 @@ async function handleToolCall(
 
     case 'social_get_intents': {
       if (!profileId) {
-        return { content: [{ type: 'text', text: '❌ Please register first' }], isError: true };
+        return { content: [{ type: 'text', text: '❌ Not logged in. Use social_login with your display_name first.' }], isError: true };
       }
 
       const { data: intents, error } = await supabase
@@ -206,7 +304,7 @@ async function handleToolCall(
 
     case 'social_get_matches': {
       if (!profileId) {
-        return { content: [{ type: 'text', text: '❌ Please register first' }], isError: true };
+        return { content: [{ type: 'text', text: '❌ Not logged in. Use social_login with your display_name first.' }], isError: true };
       }
 
       const { data: matches, error } = await supabase
@@ -234,7 +332,7 @@ async function handleToolCall(
 
     case 'social_respond_match': {
       if (!profileId) {
-        return { content: [{ type: 'text', text: '❌ Please register first' }], isError: true };
+        return { content: [{ type: 'text', text: '❌ Not logged in. Use social_login with your display_name first.' }], isError: true };
       }
 
       const { data: match, error: fetchError } = await supabase
@@ -268,7 +366,7 @@ async function handleToolCall(
 
     case 'social_send_message': {
       if (!profileId) {
-        return { content: [{ type: 'text', text: '❌ Please register first' }], isError: true };
+        return { content: [{ type: 'text', text: '❌ Not logged in. Use social_login with your display_name first.' }], isError: true };
       }
 
       const { error } = await supabase.from('messages').insert({
@@ -284,7 +382,7 @@ async function handleToolCall(
 
     case 'social_get_messages': {
       if (!profileId) {
-        return { content: [{ type: 'text', text: '❌ Please register first' }], isError: true };
+        return { content: [{ type: 'text', text: '❌ Not logged in. Use social_login with your display_name first.' }], isError: true };
       }
 
       const { data: messages, error } = await supabase
@@ -306,7 +404,7 @@ async function handleToolCall(
 
     case 'social_get_notifications': {
       if (!profileId) {
-        return { content: [{ type: 'text', text: '❌ Please register first' }], isError: true };
+        return { content: [{ type: 'text', text: '❌ Not logged in. Use social_login with your display_name first.' }], isError: true };
       }
 
       const { data: notifications, error } = await supabase
