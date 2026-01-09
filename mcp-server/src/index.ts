@@ -8,17 +8,53 @@ import {
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { createClient, RealtimeChannel } from '@supabase/supabase-js';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
 const API_URL = process.env.SOCIAL_MCP_API_URL || 'https://cwaozizmiipxstlwmepk.supabase.co/functions/v1';
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://cwaozizmiipxstlwmepk.supabase.co';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN3YW96aXptaWlweHN0bHdtZXBrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc5NjY0MjMsImV4cCI6MjA4MzU0MjQyM30.QArs0EZmysGrPTrpMUSsUizkDav9uHZgCqOYF1Dva9w';
 
-// Store credentials
+// Credentials file path for persistence
+const CREDENTIALS_FILE = path.join(os.homedir(), '.social-mcp-credentials.json');
+
+// Store credentials in memory (loaded from file)
 let apiKey: string | null = null;
 let profileId: string | null = null;
 
+// Load credentials from file on startup
+function loadCredentials() {
+  try {
+    if (fs.existsSync(CREDENTIALS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(CREDENTIALS_FILE, 'utf-8'));
+      apiKey = data.apiKey || null;
+      profileId = data.profileId || null;
+      console.error(`[Credentials] Loaded from file: profileId=${profileId}`);
+    }
+  } catch (e) {
+    console.error('[Credentials] Failed to load:', e);
+  }
+}
+
+// Save credentials to file
+function saveCredentials() {
+  try {
+    fs.writeFileSync(CREDENTIALS_FILE, JSON.stringify({ apiKey, profileId }), 'utf-8');
+    console.error(`[Credentials] Saved to file: profileId=${profileId}`);
+  } catch (e) {
+    console.error('[Credentials] Failed to save:', e);
+  }
+}
+
+// Load credentials on startup
+loadCredentials();
+
 // Supabase client for realtime
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Setup realtime for existing credentials (after supabase client is created)
+// This will be done after server setup in main()
 
 // Realtime channels
 let notificationsChannel: RealtimeChannel | null = null;
@@ -326,6 +362,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         apiKey = result.api_key;
         profileId = result.profile_id;
 
+        // Save credentials to file for persistence
+        saveCredentials();
+
         // Setup realtime subscriptions
         if (profileId) setupRealtimeSubscriptions(profileId);
 
@@ -340,49 +379,45 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'social_login': {
-        // First get profile info from API
-        const result = await apiCall('mcp', {
+        // Try to find profile by display name or ID and get/regenerate API key
+        const displayName = args?.display_name as string | undefined;
+        const inputProfileId = args?.profile_id as string | undefined;
+        
+        // Use the register endpoint with existing profile info to get a new API key
+        // The register endpoint will find existing profile and return new API key
+        const result = await apiCall('mcp-register', {
           method: 'POST',
           body: JSON.stringify({
-            jsonrpc: '2.0',
-            id: 1,
-            method: 'tools/call',
-            params: {
-              name: 'social_login',
-              arguments: args,
-            },
+            mcp_client_id: `mcp_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+            display_name: displayName,
+            profile_id: inputProfileId,
+            login_only: true, // Flag to indicate this is a login, not new registration
           }),
         });
 
-        // Extract profile ID from response
-        const responseText = result.result?.content?.[0]?.text || '';
-        const profileIdMatch = responseText.match(/Profile ID: ([a-f0-9-]+)/);
-        
-        if (profileIdMatch) {
-          profileId = profileIdMatch[1];
-          
-          // We need to get an API key for this profile
-          // For now, we'll use session-based auth via the MCP endpoint
-          if (profileId) setupRealtimeSubscriptions(profileId);
-
+        if (result.error) {
           return {
-            content: [
-              {
-                type: 'text',
-                text: `${responseText}\n\n🔔 Realtime notifications are now active.`,
-              },
-            ],
+            content: [{ type: 'text', text: `❌ ${result.error}` }],
+            isError: true,
           };
         }
+
+        apiKey = result.api_key;
+        profileId = result.profile_id;
+        
+        // Save credentials to file for persistence
+        saveCredentials();
+        
+        // Setup realtime subscriptions
+        if (profileId) setupRealtimeSubscriptions(profileId);
 
         return {
           content: [
             {
               type: 'text',
-              text: responseText,
+              text: `✅ Logged in as ${result.display_name}!\n\nProfile ID: ${profileId}\n\n🔔 Realtime notifications are now active.`,
             },
           ],
-          isError: responseText.includes('❌'),
         };
       }
 
@@ -715,7 +750,14 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error('Social MCP Server running with realtime support');
-  console.error('Waiting for registration to activate realtime subscriptions...');
+  
+  // If we have credentials from a previous session, setup realtime
+  if (profileId && apiKey) {
+    console.error(`[Startup] Found existing credentials for profileId: ${profileId}`);
+    setupRealtimeSubscriptions(profileId);
+  } else {
+    console.error('Waiting for registration to activate realtime subscriptions...');
+  }
 }
 
 main().catch(console.error);
