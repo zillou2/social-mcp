@@ -327,7 +327,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         profileId = result.profile_id;
 
         // Setup realtime subscriptions
-        setupRealtimeSubscriptions(profileId);
+        if (profileId) setupRealtimeSubscriptions(profileId);
 
         return {
           content: [
@@ -363,7 +363,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           
           // We need to get an API key for this profile
           // For now, we'll use session-based auth via the MCP endpoint
-          setupRealtimeSubscriptions(profileId);
+          if (profileId) setupRealtimeSubscriptions(profileId);
 
           return {
             content: [

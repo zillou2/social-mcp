@@ -1052,7 +1052,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         apiKey = result.api_key;
         profileId = result.profile_id;
-        setupRealtimeSubscriptions(profileId);
+        if (profileId) setupRealtimeSubscriptions(profileId);
 
         return {
           content: [{
@@ -1077,7 +1077,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
         profileId = profile.id;
-        setupRealtimeSubscriptions(profileId);
+        if (profileId) setupRealtimeSubscriptions(profileId);
 
         return { content: [{ type: 'text', text: \`✅ Logged in as \${profile.display_name}!\\n🔔 Realtime notifications active.\` }] };
       }
