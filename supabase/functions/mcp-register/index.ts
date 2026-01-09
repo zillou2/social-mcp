@@ -14,57 +14,98 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
-    const { mcp_client_id, display_name, bio, location, profile_data } = await req.json();
-
-    if (!mcp_client_id) {
-      return new Response(
-        JSON.stringify({ error: 'mcp_client_id is required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Check if profile already exists
-    const { data: existingProfile } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('mcp_client_id', mcp_client_id)
-      .single();
+    const { mcp_client_id, display_name, bio, location, profile_data, profile_id: inputProfileId, login_only } = await req.json();
 
     let profileId: string;
+    let profileDisplayName: string;
 
-    if (existingProfile) {
-      // Update existing profile
-      const { data: updated, error } = await supabase
+    // Login mode: find existing profile by display_name or profile_id
+    if (login_only) {
+      let existingProfile;
+      
+      if (inputProfileId) {
+        const { data } = await supabase
+          .from('profiles')
+          .select('id, display_name')
+          .eq('id', inputProfileId)
+          .single();
+        existingProfile = data;
+      } else if (display_name) {
+        const { data } = await supabase
+          .from('profiles')
+          .select('id, display_name')
+          .ilike('display_name', display_name)
+          .single();
+        existingProfile = data;
+      }
+      
+      if (!existingProfile) {
+        return new Response(
+          JSON.stringify({ error: 'Profile not found. Please register first.' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      profileId = existingProfile.id;
+      profileDisplayName = existingProfile.display_name;
+      
+      // Update last seen
+      await supabase
         .from('profiles')
-        .update({
-          display_name,
-          bio,
-          location,
-          profile_data: profile_data || {},
-          last_seen_at: new Date().toISOString()
-        })
-        .eq('id', existingProfile.id)
-        .select()
-        .single();
-
-      if (error) throw error;
-      profileId = updated.id;
+        .update({ last_seen_at: new Date().toISOString() })
+        .eq('id', profileId);
     } else {
-      // Create new profile
-      const { data: newProfile, error } = await supabase
+      // Registration mode
+      if (!mcp_client_id) {
+        return new Response(
+          JSON.stringify({ error: 'mcp_client_id is required' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Check if profile already exists by mcp_client_id
+      const { data: existingProfile } = await supabase
         .from('profiles')
-        .insert({
-          mcp_client_id,
-          display_name,
-          bio,
-          location,
-          profile_data: profile_data || {}
-        })
-        .select()
+        .select('id, display_name')
+        .eq('mcp_client_id', mcp_client_id)
         .single();
 
-      if (error) throw error;
-      profileId = newProfile.id;
+      if (existingProfile) {
+        // Update existing profile
+        const { data: updated, error } = await supabase
+          .from('profiles')
+          .update({
+            display_name,
+            bio,
+            location,
+            profile_data: profile_data || {},
+            last_seen_at: new Date().toISOString()
+          })
+          .eq('id', existingProfile.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+        profileId = updated.id;
+        profileDisplayName = updated.display_name;
+      } else {
+        // Create new profile
+        const { data: newProfile, error } = await supabase
+          .from('profiles')
+          .insert({
+            mcp_client_id,
+            display_name,
+            bio,
+            location,
+            profile_data: profile_data || {}
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+        profileId = newProfile.id;
+        profileDisplayName = newProfile.display_name;
+      }
     }
 
     // Generate new API key for this session
@@ -83,8 +124,9 @@ serve(async (req) => {
       JSON.stringify({
         success: true,
         profile_id: profileId,
+        display_name: profileDisplayName,
         api_key: apiKey,
-        message: 'Profile registered successfully. Use this API key for subsequent requests.'
+        message: login_only ? 'Logged in successfully.' : 'Profile registered successfully. Use this API key for subsequent requests.'
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
