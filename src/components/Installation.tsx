@@ -1,13 +1,16 @@
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
-import { Copy, Check, Link, MessageSquare } from 'lucide-react';
+import { Copy, Check, Terminal, MessageSquare } from 'lucide-react';
 import { useState } from 'react';
 
-const MCP_URL = 'https://cwaozizmiipxstlwmepk.supabase.co/functions/v1';
+const MCP_URL = 'https://cwaozizmiipxstlwmepk.supabase.co/functions/v1/mcp';
+
+const cliCommand = `claude mcp add -t sse social-mcp ${MCP_URL}`;
 
 const configExample = `{
   "mcpServers": {
     "social-mcp": {
+      "transport": "sse",
       "url": "${MCP_URL}"
     }
   }
@@ -15,20 +18,20 @@ const configExample = `{
 
 const steps = [
   {
-    icon: Link,
-    title: 'Copy URL',
-    description: 'Copy the MCP server URL below',
+    icon: Terminal,
+    title: 'Run Command',
+    description: 'One command to install',
   },
   {
     icon: MessageSquare,
-    title: 'Configure',
-    description: 'Add to your AI client settings',
+    title: 'Start Chatting',
+    description: 'Ask your AI to connect you',
   },
 ];
 
 export const Installation = () => {
   const [copied, setCopied] = useState(false);
-  const [urlCopied, setUrlCopied] = useState(false);
+  const [cmdCopied, setCmdCopied] = useState(false);
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(configExample);
@@ -36,10 +39,10 @@ export const Installation = () => {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleCopyUrl = async () => {
-    await navigator.clipboard.writeText(MCP_URL);
-    setUrlCopied(true);
-    setTimeout(() => setUrlCopied(false), 2000);
+  const handleCopyCmd = async () => {
+    await navigator.clipboard.writeText(cliCommand);
+    setCmdCopied(true);
+    setTimeout(() => setCmdCopied(false), 2000);
   };
 
   return (
@@ -56,7 +59,7 @@ export const Installation = () => {
             Get Started in <span className="text-primary">Seconds</span>
           </h2>
           <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-            Just add the MCP server URL to your AI client—no installation required
+            One command. No downloads. No installation.
           </p>
         </motion.div>
 
@@ -84,7 +87,7 @@ export const Installation = () => {
           ))}
         </motion.div>
 
-        {/* MCP URL */}
+        {/* CLI Command */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -93,14 +96,14 @@ export const Installation = () => {
           className="mb-8"
         >
           <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-medium text-muted-foreground">MCP Server URL</span>
+            <span className="text-sm font-medium text-muted-foreground">Claude Code CLI</span>
             <Button
               variant="ghost"
               size="sm"
-              onClick={handleCopyUrl}
+              onClick={handleCopyCmd}
               className="text-xs"
             >
-              {urlCopied ? (
+              {cmdCopied ? (
                 <>
                   <Check className="w-3 h-3 mr-1" />
                   Copied!
@@ -108,13 +111,13 @@ export const Installation = () => {
               ) : (
                 <>
                   <Copy className="w-3 h-3 mr-1" />
-                  Copy URL
+                  Copy Command
                 </>
               )}
             </Button>
           </div>
           <div className="bg-card/50 backdrop-blur-sm border border-border rounded-lg p-4 font-mono text-sm break-all">
-            {MCP_URL}
+            <span className="text-muted-foreground">$ </span>{cliCommand}
           </div>
         </motion.div>
 
@@ -128,7 +131,7 @@ export const Installation = () => {
         >
           <div className="flex items-center justify-between mb-4">
             <span className="text-sm font-medium text-muted-foreground">
-              Example configuration (claude_desktop_config.json)
+              Or add to config manually (claude_desktop_config.json)
             </span>
             <Button
               variant="ghost"
@@ -162,7 +165,7 @@ export const Installation = () => {
           transition={{ duration: 0.6, delay: 0.4 }}
           className="text-center text-sm text-muted-foreground mt-6"
         >
-          Works with Claude Desktop, ChatGPT, and any MCP-compatible AI client
+          Works with Claude Code, Claude Desktop, and any MCP-compatible AI client
         </motion.p>
       </div>
     </section>
