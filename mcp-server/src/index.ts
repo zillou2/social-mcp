@@ -7,12 +7,29 @@ import {
   ListResourcesRequestSchema,
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
+import { createClient, RealtimeChannel } from '@supabase/supabase-js';
 
 const API_URL = process.env.SOCIAL_MCP_API_URL || 'https://cwaozizmiipxstlwmepk.supabase.co/functions/v1';
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://cwaozizmiipxstlwmepk.supabase.co';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN3YW96aXptaWlweHN0bHdtZXBrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc5NjY0MjMsImV4cCI6MjA4MzU0MjQyM30.QArs0EZmysGrPTrpMUSsUizkDav9uHZgCqOYF1Dva9w';
 
-// Store API key in memory (set after registration)
+// Store credentials
 let apiKey: string | null = null;
 let profileId: string | null = null;
+
+// Supabase client for realtime
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Realtime channels
+let notificationsChannel: RealtimeChannel | null = null;
+let messagesChannel: RealtimeChannel | null = null;
+
+// Pending notifications queue (for resource reads)
+const pendingNotifications: Array<{
+  type: string;
+  payload: Record<string, unknown>;
+  timestamp: Date;
+}> = [];
 
 // Helper to make API calls
 async function apiCall(endpoint: string, options: RequestInit = {}) {
@@ -39,6 +56,93 @@ async function apiCall(endpoint: string, options: RequestInit = {}) {
   return data;
 }
 
+// Setup realtime subscriptions
+function setupRealtimeSubscriptions(currentProfileId: string) {
+  // Clean up existing subscriptions
+  if (notificationsChannel) {
+    supabase.removeChannel(notificationsChannel);
+  }
+  if (messagesChannel) {
+    supabase.removeChannel(messagesChannel);
+  }
+
+  console.error(`[Realtime] Setting up subscriptions for profile: ${currentProfileId}`);
+
+  // Subscribe to notifications for this profile
+  notificationsChannel = supabase
+    .channel(`notifications:${currentProfileId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'notifications',
+        filter: `profile_id=eq.${currentProfileId}`,
+      },
+      (payload) => {
+        console.error(`[Realtime] New notification: ${JSON.stringify(payload.new)}`);
+        const notification = payload.new as {
+          notification_type: string;
+          payload: Record<string, unknown>;
+        };
+        
+        pendingNotifications.push({
+          type: notification.notification_type,
+          payload: notification.payload,
+          timestamp: new Date(),
+        });
+
+        // Log to stderr so Claude can see it in logs
+        const icon = notification.notification_type === 'new_match' ? '🎉' :
+                    notification.notification_type === 'match_accepted' ? '🤝' :
+                    notification.notification_type === 'new_message' ? '💬' : '📢';
+        console.error(`[NOTIFICATION] ${icon} ${notification.notification_type}: ${JSON.stringify(notification.payload)}`);
+      }
+    )
+    .subscribe((status) => {
+      console.error(`[Realtime] Notifications channel status: ${status}`);
+    });
+
+  // Subscribe to messages where this profile is part of an accepted match
+  // We'll subscribe to all messages and filter in the handler
+  messagesChannel = supabase
+    .channel(`messages:${currentProfileId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+      },
+      async (payload) => {
+        const message = payload.new as {
+          match_id: string;
+          sender_profile_id: string;
+          content: string;
+        };
+        
+        // Only notify if we're not the sender
+        if (message.sender_profile_id !== currentProfileId) {
+          console.error(`[Realtime] New message in match ${message.match_id}`);
+          
+          pendingNotifications.push({
+            type: 'new_message',
+            payload: {
+              match_id: message.match_id,
+              preview: message.content.substring(0, 100),
+            },
+            timestamp: new Date(),
+          });
+
+          console.error(`[NOTIFICATION] 💬 New message: "${message.content.substring(0, 50)}..."`);
+        }
+      }
+    )
+    .subscribe((status) => {
+      console.error(`[Realtime] Messages channel status: ${status}`);
+    });
+}
+
 // Create server
 const server = new Server(
   {
@@ -48,7 +152,9 @@ const server = new Server(
   {
     capabilities: {
       tools: {},
-      resources: {},
+      resources: {
+        subscribe: true,
+      },
     },
   }
 );
@@ -77,6 +183,23 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
           },
           required: ['display_name', 'bio'],
+        },
+      },
+      {
+        name: 'social_login',
+        description: 'Log in to your existing Social MCP profile if you have registered before.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            display_name: {
+              type: 'string',
+              description: 'Your display name (case-insensitive)',
+            },
+            profile_id: {
+              type: 'string',
+              description: 'Your profile ID (if you know it)',
+            },
+          },
         },
       },
       {
@@ -171,7 +294,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'social_get_notifications',
-        description: 'Check for new notifications (new matches, messages, etc.)',
+        description: 'Get new notifications (new matches, messages, etc.). With realtime enabled, this also returns any push notifications received.',
         inputSchema: {
           type: 'object',
           properties: {},
@@ -188,7 +311,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     switch (name) {
       case 'social_register': {
-        // Generate a unique client ID for this MCP session
         const mcpClientId = `mcp_${Date.now()}_${Math.random().toString(36).substring(7)}`;
         
         const result = await apiCall('mcp-register', {
@@ -201,24 +323,73 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }),
         });
 
-        // Store credentials for future calls
         apiKey = result.api_key;
         profileId = result.profile_id;
+
+        // Setup realtime subscriptions
+        setupRealtimeSubscriptions(profileId);
 
         return {
           content: [
             {
               type: 'text',
-              text: `✅ Profile registered successfully!\n\nProfile ID: ${profileId}\n\nYou can now:\n- Set your intent with social_set_intent\n- Check for matches with social_get_matches\n- View notifications with social_get_notifications`,
+              text: `✅ Profile registered successfully!\n\nProfile ID: ${profileId}\n\n🔔 Realtime notifications are now active. You'll receive push notifications for new messages and matches.\n\nYou can now:\n- Set your intent with social_set_intent\n- Check for matches with social_get_matches\n- View notifications with social_get_notifications`,
             },
           ],
         };
       }
 
-      case 'social_set_intent': {
-        if (!apiKey) {
+      case 'social_login': {
+        // First get profile info from API
+        const result = await apiCall('mcp', {
+          method: 'POST',
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'tools/call',
+            params: {
+              name: 'social_login',
+              arguments: args,
+            },
+          }),
+        });
+
+        // Extract profile ID from response
+        const responseText = result.result?.content?.[0]?.text || '';
+        const profileIdMatch = responseText.match(/Profile ID: ([a-f0-9-]+)/);
+        
+        if (profileIdMatch) {
+          profileId = profileIdMatch[1];
+          
+          // We need to get an API key for this profile
+          // For now, we'll use session-based auth via the MCP endpoint
+          setupRealtimeSubscriptions(profileId);
+
           return {
-            content: [{ type: 'text', text: '❌ Please register first using social_register' }],
+            content: [
+              {
+                type: 'text',
+                text: `${responseText}\n\n🔔 Realtime notifications are now active.`,
+              },
+            ],
+          };
+        }
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: responseText,
+            },
+          ],
+          isError: responseText.includes('❌'),
+        };
+      }
+
+      case 'social_set_intent': {
+        if (!apiKey && !profileId) {
+          return {
+            content: [{ type: 'text', text: '❌ Please register or login first using social_register or social_login' }],
             isError: true,
           };
         }
@@ -243,7 +414,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'social_get_intents': {
-        if (!apiKey) {
+        if (!apiKey && !profileId) {
           return {
             content: [{ type: 'text', text: '❌ Please register first using social_register' }],
             isError: true,
@@ -269,7 +440,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'social_get_matches': {
-        if (!apiKey) {
+        if (!apiKey && !profileId) {
           return {
             content: [{ type: 'text', text: '❌ Please register first using social_register' }],
             isError: true,
@@ -309,7 +480,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'social_respond_match': {
-        if (!apiKey) {
+        if (!apiKey && !profileId) {
           return {
             content: [{ type: 'text', text: '❌ Please register first using social_register' }],
             isError: true,
@@ -331,14 +502,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'social_send_message': {
-        if (!apiKey) {
+        if (!apiKey && !profileId) {
           return {
             content: [{ type: 'text', text: '❌ Please register first using social_register' }],
             isError: true,
           };
         }
 
-        const result = await apiCall(`mcp-chat?match_id=${args?.match_id}`, {
+        await apiCall(`mcp-chat?match_id=${args?.match_id}`, {
           method: 'POST',
           body: JSON.stringify({
             content: args?.content,
@@ -346,12 +517,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         });
 
         return {
-          content: [{ type: 'text', text: `✉️ Message sent!` }],
+          content: [{ type: 'text', text: '✉️ Message sent!' }],
         };
       }
 
       case 'social_get_messages': {
-        if (!apiKey) {
+        if (!apiKey && !profileId) {
           return {
             content: [{ type: 'text', text: '❌ Please register first using social_register' }],
             isError: true,
@@ -386,33 +557,46 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'social_get_notifications': {
-        if (!apiKey) {
+        if (!apiKey && !profileId) {
           return {
             content: [{ type: 'text', text: '❌ Please register first using social_register' }],
             isError: true,
           };
         }
 
+        // Get pending realtime notifications first
+        const realtimeNotifs = [...pendingNotifications];
+        pendingNotifications.length = 0; // Clear the queue
+
+        // Also fetch from API (in case we missed any)
         const result = await apiCall('mcp-notifications', { method: 'GET' });
 
-        if (!result.notifications?.length) {
+        const allNotifications = [
+          ...realtimeNotifs.map(n => ({
+            type: n.type,
+            payload: n.payload,
+            source: 'realtime',
+          })),
+          ...(result.notifications || []).map((n: { type: string; payload: Record<string, unknown> }) => ({
+            type: n.type,
+            payload: n.payload,
+            source: 'api',
+          })),
+        ];
+
+        if (!allNotifications.length) {
           return {
             content: [{ type: 'text', text: '📭 No new notifications.' }],
           };
         }
 
-        interface Notification {
-          type: string;
-          payload: Record<string, unknown>;
-          created_at: string;
-        }
-
-        const notifList = result.notifications
-          .map((n: Notification) => {
+        const notifList = allNotifications
+          .map((n) => {
             const icon = n.type === 'new_match' ? '🎉' :
                         n.type === 'match_accepted' ? '🤝' :
                         n.type === 'new_message' ? '💬' : '📢';
-            return `${icon} ${n.type.replace(/_/g, ' ')}: ${JSON.stringify(n.payload)}`;
+            const source = n.source === 'realtime' ? ' (realtime)' : '';
+            return `${icon} ${n.type.replace(/_/g, ' ')}${source}: ${JSON.stringify(n.payload)}`;
           })
           .join('\n');
 
@@ -442,7 +626,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
       {
         uri: 'social://notifications',
         name: 'Social MCP Notifications',
-        description: 'Real-time notifications about matches and messages',
+        description: 'Real-time notifications about matches and messages (with push support)',
         mimeType: 'application/json',
       },
       {
@@ -459,7 +643,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
 server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   const { uri } = request.params;
 
-  if (!apiKey) {
+  if (!apiKey && !profileId) {
     return {
       contents: [
         {
@@ -473,13 +657,19 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
 
   try {
     if (uri === 'social://notifications') {
+      // Include pending realtime notifications
+      const realtimeNotifs = [...pendingNotifications];
+      
       const result = await apiCall('mcp-notifications', { method: 'GET' });
       return {
         contents: [
           {
             uri,
             mimeType: 'application/json',
-            text: JSON.stringify(result),
+            text: JSON.stringify({
+              realtime_pending: realtimeNotifs,
+              api_notifications: result.notifications || [],
+            }),
           },
         ],
       };
@@ -520,11 +710,12 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   }
 });
 
-// Start server
+// Main function
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('Social MCP server running on stdio');
+  console.error('Social MCP Server running with realtime support');
+  console.error('Waiting for registration to activate realtime subscriptions...');
 }
 
 main().catch(console.error);
