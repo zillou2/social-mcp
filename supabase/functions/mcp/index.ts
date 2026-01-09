@@ -103,7 +103,7 @@ const TOOLS = [
   },
   {
     name: 'social_get_messages',
-    description: 'Get chat history with a matched user. Requires login first.',
+    description: 'Get chat history with a matched user. **TIP**: Call this or social_get_notifications periodically to check for new messages. Requires login first.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -114,7 +114,7 @@ const TOOLS = [
   },
   {
     name: 'social_get_notifications',
-    description: 'Check for new notifications. Requires login first.',
+    description: 'Check for new notifications (new matches, messages, etc.). **IMPORTANT**: Call this periodically during conversations to check for incoming messages. Requires login first.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
@@ -425,7 +425,7 @@ async function handleToolCall(
       });
 
       if (error) throw new Error(`Failed to send message: ${error.message}`);
-      return { content: [{ type: 'text', text: '✉️ Message sent!' }] };
+      return { content: [{ type: 'text', text: '✉️ Message sent!\n\n💡 The recipient will see this when they check notifications (social_get_notifications) or messages (social_get_messages).' }] };
     }
 
     case 'social_get_messages': {
