@@ -117,6 +117,11 @@ const TOOLS = [
     description: 'Check for new notifications. Requires login first.',
     inputSchema: { type: 'object', properties: {} },
   },
+  {
+    name: 'social_find_matches',
+    description: 'Manually trigger the matching algorithm to find new matches based on current intents. The system runs this automatically, but you can trigger it manually to check immediately.',
+    inputSchema: { type: 'object', properties: {} },
+  },
 ];
 
 // Session context passed through tool calls
@@ -267,19 +272,60 @@ async function handleToolCall(
         return { content: [{ type: 'text', text: '❌ Not logged in. Use social_login with your display_name first.' }], isError: true };
       }
 
-      const { error } = await supabase.from('intents').insert({
+      const { data: newIntent, error } = await supabase.from('intents').insert({
         profile_id: profileId,
         category: toolArgs.category,
         description: toolArgs.description,
         criteria: toolArgs.criteria || {},
-      });
+      }).select().single();
 
       if (error) throw new Error(`Failed to create intent: ${error.message}`);
+
+      // Auto-trigger matching to find immediate matches
+      let matchesFound = 0;
+      const { data: otherIntents } = await supabase
+        .from('intents')
+        .select('*, profile:profiles(*)')
+        .eq('is_active', true)
+        .eq('category', toolArgs.category)
+        .neq('profile_id', profileId);
+
+      if (otherIntents?.length) {
+        for (const otherIntent of otherIntents) {
+          // Check if match already exists
+          const { data: existingMatch } = await supabase
+            .from('matches')
+            .select('id')
+            .or(`and(intent_a_id.eq.${newIntent.id},intent_b_id.eq.${otherIntent.id}),and(intent_a_id.eq.${otherIntent.id},intent_b_id.eq.${newIntent.id})`)
+            .limit(1);
+
+          if (existingMatch?.length) continue;
+
+          // Create match for same category
+          const { error: matchError } = await supabase
+            .from('matches')
+            .insert({
+              intent_a_id: newIntent.id,
+              intent_b_id: otherIntent.id,
+              profile_a_id: profileId,
+              profile_b_id: otherIntent.profile_id,
+              match_score: 0.6,
+              match_reason: `Both looking for ${toolArgs.category} connections`,
+              status: 'pending_a'
+            });
+
+          if (!matchError) matchesFound++;
+        }
+      }
+
+      const matchMsg = matchesFound > 0 
+        ? `\n\n🎉 Found ${matchesFound} potential match(es)! Use social_get_matches to see them.`
+        : '';
 
       return {
         content: [{
           type: 'text',
-          text: `✅ Intent created!\n\nCategory: ${toolArgs.category}\nDescription: ${toolArgs.description}\n\nThe system will now look for compatible matches.`,
+          text: `✅ Intent created!\n\nCategory: ${toolArgs.category}\nDescription: ${toolArgs.description}${matchMsg}`,
         }],
       };
     }
@@ -436,6 +482,76 @@ async function handleToolCall(
       }).join('\n');
 
       return { content: [{ type: 'text', text: `🔔 Notifications:\n\n${list}` }] };
+    }
+
+    case 'social_find_matches': {
+      // Trigger the matching algorithm inline
+      const { data: intents, error: intentsError } = await supabase
+        .from('intents')
+        .select('*, profile:profiles(*)')
+        .eq('is_active', true);
+
+      if (intentsError) throw new Error(`Failed to get intents: ${intentsError.message}`);
+
+      let matchesCreated = 0;
+
+      // Compare each intent with others
+      for (let i = 0; i < intents.length; i++) {
+        for (let j = i + 1; j < intents.length; j++) {
+          const intentA = intents[i];
+          const intentB = intents[j];
+
+          // Skip if same profile
+          if (intentA.profile_id === intentB.profile_id) continue;
+
+          // Check if match already exists
+          const { data: existingMatch } = await supabase
+            .from('matches')
+            .select('id')
+            .or(`and(intent_a_id.eq.${intentA.id},intent_b_id.eq.${intentB.id}),and(intent_a_id.eq.${intentB.id},intent_b_id.eq.${intentA.id})`)
+            .limit(1);
+
+          if (existingMatch?.length) continue;
+
+          // Calculate match score - use category matching as reliable baseline
+          let matchScore = 0;
+          let matchReason = '';
+
+          // Same category = strong match potential
+          if (intentA.category === intentB.category) {
+            matchScore = 0.6;
+            matchReason = `Both looking for ${intentA.category} connections`;
+          }
+
+          // Create match if score is above threshold
+          if (matchScore >= 0.3) {
+            const { error: matchError } = await supabase
+              .from('matches')
+              .insert({
+                intent_a_id: intentA.id,
+                intent_b_id: intentB.id,
+                profile_a_id: intentA.profile_id,
+                profile_b_id: intentB.profile_id,
+                match_score: matchScore,
+                match_reason: matchReason,
+                status: 'pending_a'
+              });
+
+            if (!matchError) {
+              matchesCreated++;
+            }
+          }
+        }
+      }
+
+      return {
+        content: [{
+          type: 'text',
+          text: matchesCreated > 0 
+            ? `🔍 Matching complete! Created ${matchesCreated} new match(es). Use social_get_matches to see them.`
+            : '🔍 Matching complete. No new matches found at this time.',
+        }],
+      };
     }
 
     default:
