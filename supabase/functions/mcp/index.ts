@@ -420,7 +420,11 @@ async function handleToolCall(
   }
 }
 
-// MCP Protocol Implementation over SSE
+// MCP Protocol Implementation
+// Due to Supabase Edge Function timeouts, we implement a hybrid approach:
+// - GET: Returns SSE with endpoint URL, but we also support direct POST responses
+// - POST: Handles JSON-RPC and returns response directly
+
 Deno.serve(async (req) => {
   const url = new URL(req.url);
   
@@ -439,64 +443,27 @@ Deno.serve(async (req) => {
   // SSE endpoint for MCP protocol (GET request initiates SSE stream)
   if (req.method === 'GET') {
     const encoder = new TextEncoder();
-    
-    // For MCP SSE transport, we need to:
-    // 1. Send an "endpoint" event with the URL to POST to
-    // 2. Keep the connection open for streaming responses
-    
-    // Generate a session ID for this connection
     const sessionId = crypto.randomUUID();
-    const postEndpoint = `${url.origin}${url.pathname}?sessionId=${sessionId}`;
+    const postEndpoint = `${url.origin}${url.pathname}`;
     
-    let streamController: ReadableStreamDefaultController<Uint8Array>;
-    let keepAliveInterval: number;
+    // Create SSE stream with the endpoint message
+    const body = encoder.encode(`event: endpoint\ndata: ${postEndpoint}\n\n`);
     
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        streamController = controller;
-        
-        // Send the endpoint event (tells client where to POST)
-        controller.enqueue(encoder.encode(`event: endpoint\ndata: ${postEndpoint}\n\n`));
-        
-        // Register this session
-        pendingResponses.set(sessionId, (response) => {
-          try {
-            controller.enqueue(encoder.encode(`event: message\ndata: ${JSON.stringify(response)}\n\n`));
-          } catch (e) {
-            console.error('Failed to send SSE message:', e);
-          }
-        });
-        
-        // Keep-alive ping every 15 seconds to prevent timeout
-        keepAliveInterval = setInterval(() => {
-          try {
-            controller.enqueue(encoder.encode(`: ping\n\n`));
-          } catch {
-            clearInterval(keepAliveInterval);
-          }
-        }, 15000);
-      },
-      cancel() {
-        console.log('SSE connection closed for session:', sessionId);
-        clearInterval(keepAliveInterval);
-        pendingResponses.delete(sessionId);
-      }
-    });
-
-    return new Response(stream, {
+    // For stateless operation, we just send the endpoint and let client POST directly
+    // The POST will return the response directly (not via SSE)
+    // This works because MCP SDK supports "stateless" SSE where POST returns inline
+    return new Response(body, {
       headers: {
         ...corsHeaders,
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
       },
     });
   }
 
   // Handle JSON-RPC requests via POST
+  // In stateless mode, we return response directly in the POST response
   if (req.method === 'POST') {
-    const sessionId = url.searchParams.get('sessionId');
-    
     try {
       const body = await req.json();
       console.log('Received MCP request:', JSON.stringify(body));
@@ -504,18 +471,6 @@ Deno.serve(async (req) => {
       const response = await processRequest(body, supabase, apiKey);
       console.log('Sending MCP response:', JSON.stringify(response));
 
-      // If we have a session ID and a registered handler, send via SSE
-      if (sessionId && pendingResponses.has(sessionId)) {
-        const sendResponse = pendingResponses.get(sessionId)!;
-        sendResponse(response);
-        // Return accepted status for SSE mode
-        return new Response('accepted', {
-          status: 202,
-          headers: { ...corsHeaders, 'Content-Type': 'text/plain' }
-        });
-      }
-
-      // Otherwise return response directly (for non-SSE clients or direct POST)
       return new Response(JSON.stringify(response), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
