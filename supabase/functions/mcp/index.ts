@@ -438,21 +438,27 @@ Deno.serve(async (req) => {
 
   // SSE endpoint for MCP protocol (GET request initiates SSE stream)
   if (req.method === 'GET') {
-    const sessionId = crypto.randomUUID();
     const encoder = new TextEncoder();
     
-    // Create a stream that stays open
-    let controller: ReadableStreamDefaultController<Uint8Array>;
+    // For MCP SSE transport, we need to:
+    // 1. Send an "endpoint" event with the URL to POST to
+    // 2. Keep the connection open for streaming responses
+    
+    // Generate a session ID for this connection
+    const sessionId = crypto.randomUUID();
+    const postEndpoint = `${url.origin}${url.pathname}?sessionId=${sessionId}`;
+    
+    let streamController: ReadableStreamDefaultController<Uint8Array>;
+    let keepAliveInterval: number;
     
     const stream = new ReadableStream<Uint8Array>({
-      start(ctrl) {
-        controller = ctrl;
+      start(controller) {
+        streamController = controller;
         
-        // Send the endpoint event first (required by MCP SSE spec)
-        const endpointUrl = `${url.origin}${url.pathname}?sessionId=${sessionId}`;
-        controller.enqueue(encoder.encode(`event: endpoint\ndata: ${endpointUrl}\n\n`));
+        // Send the endpoint event (tells client where to POST)
+        controller.enqueue(encoder.encode(`event: endpoint\ndata: ${postEndpoint}\n\n`));
         
-        // Register this session for receiving responses
+        // Register this session
         pendingResponses.set(sessionId, (response) => {
           try {
             controller.enqueue(encoder.encode(`event: message\ndata: ${JSON.stringify(response)}\n\n`));
@@ -460,9 +466,19 @@ Deno.serve(async (req) => {
             console.error('Failed to send SSE message:', e);
           }
         });
+        
+        // Keep-alive ping every 15 seconds to prevent timeout
+        keepAliveInterval = setInterval(() => {
+          try {
+            controller.enqueue(encoder.encode(`: ping\n\n`));
+          } catch {
+            clearInterval(keepAliveInterval);
+          }
+        }, 15000);
       },
       cancel() {
         console.log('SSE connection closed for session:', sessionId);
+        clearInterval(keepAliveInterval);
         pendingResponses.delete(sessionId);
       }
     });
@@ -493,12 +509,13 @@ Deno.serve(async (req) => {
         const sendResponse = pendingResponses.get(sessionId)!;
         sendResponse(response);
         // Return accepted status for SSE mode
-        return new Response(JSON.stringify({ status: 'accepted' }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        return new Response('accepted', {
+          status: 202,
+          headers: { ...corsHeaders, 'Content-Type': 'text/plain' }
         });
       }
 
-      // Otherwise return response directly (for non-SSE clients)
+      // Otherwise return response directly (for non-SSE clients or direct POST)
       return new Response(JSON.stringify(response), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
