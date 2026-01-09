@@ -1,12 +1,44 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { useState } from 'react';
+import { NetworkBackground } from '@/components/NetworkBackground';
+import { Navbar } from '@/components/Navbar';
+import { Hero } from '@/components/Hero';
+import { HowItWorks } from '@/components/HowItWorks';
+import { DemoFlow } from '@/components/DemoFlow';
+import { Features } from '@/components/Features';
+import { CTA } from '@/components/CTA';
+import { Footer } from '@/components/Footer';
+import { useToast } from '@/hooks/use-toast';
 
 const Index = () => {
+  const { toast } = useToast();
+
+  const handleGetStarted = () => {
+    toast({
+      title: "Social MCP Activation",
+      description: "Tell your AI assistant: 'Enable Social MCP' to get started!",
+    });
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
-      </div>
+    <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
+      <NetworkBackground />
+      <Navbar onGetStarted={handleGetStarted} />
+      
+      <main className="relative z-10">
+        <Hero onGetStarted={handleGetStarted} />
+        <section id="how-it-works">
+          <HowItWorks />
+        </section>
+        <section id="demo">
+          <DemoFlow />
+        </section>
+        <section id="features">
+          <Features />
+        </section>
+        <CTA onGetStarted={handleGetStarted} />
+      </main>
+
+      <Footer />
     </div>
   );
 };
