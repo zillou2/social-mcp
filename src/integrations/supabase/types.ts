@@ -176,6 +176,38 @@ export type Database = {
           },
         ]
       }
+      mcp_sessions: {
+        Row: {
+          created_at: string
+          id: string
+          last_used_at: string
+          profile_id: string | null
+          session_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          last_used_at?: string
+          profile_id?: string | null
+          session_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          last_used_at?: string
+          profile_id?: string | null
+          session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mcp_sessions_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           content: string
@@ -309,7 +341,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      cleanup_old_mcp_sessions: { Args: never; Returns: undefined }
     }
     Enums: {
       connection_status:

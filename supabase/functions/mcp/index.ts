@@ -103,13 +103,20 @@ const TOOLS = [
   },
 ];
 
+// Session context passed through tool calls
+interface SessionContext {
+  sessionId: string;
+  supabase: any;
+}
+
 // Handle tool calls
 async function handleToolCall(
   toolName: string,
   toolArgs: Record<string, any>,
   profileId: string | null,
-  supabase: any
-): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  supabase: any,
+  sessionContext?: SessionContext
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean; newProfileId?: string }> {
   
   switch (toolName) {
     case 'social_register': {
@@ -137,11 +144,21 @@ async function handleToolCall(
         name: 'MCP Client Key',
       });
 
+      // Associate session with this profile for session-based auth
+      if (sessionContext?.sessionId) {
+        await supabase.from('mcp_sessions').upsert({
+          session_id: sessionContext.sessionId,
+          profile_id: newProfileId,
+          last_used_at: new Date().toISOString(),
+        }, { onConflict: 'session_id' });
+      }
+
       return {
         content: [{
           type: 'text',
-          text: `✅ Profile registered!\n\nProfile ID: ${newProfileId}\nAPI Key: ${newApiKey}\n\n⚠️ Save this API key - you'll need it for future requests.\nPass it in the x-mcp-api-key header.\n\nYou can now use social_set_intent to set what you're looking for.`,
+          text: `✅ Profile registered!\n\nProfile ID: ${newProfileId}\nDisplay Name: ${toolArgs.display_name}\n\nYour session is now authenticated. You can use all social-mcp features.\n\n💡 Tip: Use social_set_intent to set what you're looking for.`,
         }],
+        newProfileId,
       };
     }
 
@@ -330,13 +347,17 @@ async function handleToolCall(
 async function processJsonRpc(
   message: any,
   supabase: any,
-  profileId: string | null
+  profileId: string | null,
+  sessionId: string
 ): Promise<any> {
   const { jsonrpc, id, method, params } = message;
 
   if (jsonrpc !== '2.0') {
     return { jsonrpc: '2.0', id, error: { code: -32600, message: 'Invalid Request' } };
   }
+
+  // Session context for tool calls
+  const sessionContext: SessionContext = { sessionId, supabase };
 
   try {
     switch (method) {
@@ -359,7 +380,7 @@ async function processJsonRpc(
 
       case 'tools/call': {
         const { name, arguments: args } = params || {};
-        const result = await handleToolCall(name, args || {}, profileId, supabase);
+        const result = await handleToolCall(name, args || {}, profileId, supabase, sessionContext);
         return { jsonrpc: '2.0', id, result };
       }
 
@@ -402,17 +423,39 @@ Deno.serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
 
-  // Get API key for authenticated requests
-  const apiKey = req.headers.get('x-mcp-api-key');
+  // Session management
+  const incomingSessionId = req.headers.get('mcp-session-id');
+  const sessionId = incomingSessionId || crypto.randomUUID();
+
+  // Try to get profile ID from multiple sources
   let profileId: string | null = null;
+  
+  // 1. First try API key auth (legacy)
+  const apiKey = req.headers.get('x-mcp-api-key');
   if (apiKey) {
     const validation = await validateMcpApiKey(apiKey);
     if (validation.valid) profileId = validation.profileId || null;
   }
-
-  // Session management
-  const incomingSessionId = req.headers.get('mcp-session-id');
-  const sessionId = incomingSessionId || crypto.randomUUID();
+  
+  // 2. If no API key, try session-based auth
+  if (!profileId && incomingSessionId) {
+    const { data: session } = await supabase
+      .from('mcp_sessions')
+      .select('profile_id')
+      .eq('session_id', incomingSessionId)
+      .single();
+    
+    if (session?.profile_id) {
+      profileId = session.profile_id;
+      // Update last_used_at
+      await supabase
+        .from('mcp_sessions')
+        .update({ last_used_at: new Date().toISOString() })
+        .eq('session_id', incomingSessionId);
+    }
+  }
+  
+  console.log(`Session: ${sessionId}, Profile: ${profileId || 'none'}`);
 
   // ============================================================
   // GET: SSE stream for legacy clients (2024-11-05 spec)
@@ -447,7 +490,7 @@ Deno.serve(async (req) => {
       const body = await req.json();
       console.log('MCP Request:', JSON.stringify(body));
 
-      const response = await processJsonRpc(body, supabase, profileId);
+      const response = await processJsonRpc(body, supabase, profileId, sessionId);
       console.log('MCP Response:', JSON.stringify(response));
 
       return new Response(JSON.stringify(response), {
