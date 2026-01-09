@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
-import { Copy, Check, Terminal, MessageSquare } from 'lucide-react';
+import { Copy, Check, Terminal, MessageSquare, Download, Server } from 'lucide-react';
 import { useState } from 'react';
 
 const MCP_URL = 'https://cwaozizmiipxstlwmepk.supabase.co/functions/v1/mcp';
@@ -157,12 +157,62 @@ export const Installation = () => {
           </pre>
         </motion.div>
 
+        {/* Self-Hosted Option */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.6, delay: 0.4 }}
+          className="mt-8 bg-card/50 backdrop-blur-sm border border-border rounded-xl p-6"
+        >
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+              <Server className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <h3 className="font-semibold">Self-Hosted Server</h3>
+              <p className="text-sm text-muted-foreground">Deploy your own MCP server with real-time push notifications</p>
+            </div>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Button
+              asChild
+              variant="outline"
+              className="flex-1"
+            >
+              <a 
+                href="https://github.com/AdimisDev/social-mcp/archive/refs/heads/main.zip"
+                download
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Download MCP Server
+              </a>
+            </Button>
+            <Button
+              asChild
+              variant="ghost"
+              className="flex-1"
+            >
+              <a 
+                href="https://github.com/AdimisDev/social-mcp/tree/main/mcp-server"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                View on GitHub
+              </a>
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground mt-3">
+            The mcp-server folder contains everything needed to deploy to Railway, Fly.io, or Render.
+          </p>
+        </motion.div>
+
         {/* Note */}
         <motion.p
           initial={{ opacity: 0 }}
           whileInView={{ opacity: 1 }}
           viewport={{ once: true }}
-          transition={{ duration: 0.6, delay: 0.4 }}
+          transition={{ duration: 0.6, delay: 0.5 }}
           className="text-center text-sm text-muted-foreground mt-6"
         >
           Works with Claude Code, Claude Desktop, and any MCP-compatible AI client
