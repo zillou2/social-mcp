@@ -1,0 +1,45 @@
+# Fly.io configuration for Social MCP Server
+# Deploy with: fly launch && fly deploy
+
+app = "social-mcp-server"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "3000"
+  SOCIAL_MCP_API_URL = "https://cwaozizmiipxstlwmepk.supabase.co/functions/v1"
+  SUPABASE_URL = "https://cwaozizmiipxstlwmepk.supabase.co"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = false  # Keep running for SSE connections
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 3000
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 1000
+    soft_limit = 500
+
+  [[services.http_checks]]
+    interval = 10000
+    grace_period = "5s"
+    method = "get"
+    path = "/health"
+    protocol = "http"
+    timeout = 2000
