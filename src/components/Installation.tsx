@@ -1,7 +1,9 @@
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Copy, Check, Terminal, MessageSquare, Download, Server } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
+import JSZip from 'jszip';
+import { MCP_SERVER_FILES } from '@/lib/mcp-server-files';
 
 const MCP_URL = 'https://cwaozizmiipxstlwmepk.supabase.co/functions/v1/mcp';
 
@@ -32,6 +34,7 @@ const steps = [
 export const Installation = () => {
   const [copied, setCopied] = useState(false);
   const [cmdCopied, setCmdCopied] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(configExample);
@@ -44,6 +47,33 @@ export const Installation = () => {
     setCmdCopied(true);
     setTimeout(() => setCmdCopied(false), 2000);
   };
+
+  const handleDownload = useCallback(async () => {
+    setDownloading(true);
+    try {
+      const zip = new JSZip();
+      
+      // Add all files to the zip
+      Object.entries(MCP_SERVER_FILES).forEach(([path, content]) => {
+        zip.file(path, content);
+      });
+
+      // Generate and download
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'social-mcp-server.zip';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to generate zip:', error);
+    } finally {
+      setDownloading(false);
+    }
+  }, []);
 
   return (
     <section id="installation" className="py-24 px-6 relative">
@@ -176,34 +206,17 @@ export const Installation = () => {
           </div>
           <div className="flex flex-col sm:flex-row gap-3">
             <Button
-              asChild
               variant="outline"
               className="flex-1"
+              onClick={handleDownload}
+              disabled={downloading}
             >
-              <a 
-                href="https://github.com/AdimisDev/social-mcp/archive/refs/heads/main.zip"
-                download
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Download MCP Server
-              </a>
-            </Button>
-            <Button
-              asChild
-              variant="ghost"
-              className="flex-1"
-            >
-              <a 
-                href="https://github.com/AdimisDev/social-mcp/tree/main/mcp-server"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                View on GitHub
-              </a>
+              <Download className="w-4 h-4 mr-2" />
+              {downloading ? 'Generating...' : 'Download MCP Server'}
             </Button>
           </div>
           <p className="text-xs text-muted-foreground mt-3">
-            The mcp-server folder contains everything needed to deploy to Railway, Fly.io, or Render.
+            Downloads a zip with everything needed to deploy to Railway, Fly.io, or Render.
           </p>
         </motion.div>
 
