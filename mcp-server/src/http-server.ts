@@ -267,6 +267,15 @@ async function handleToolCall(
 
       session.apiKey = result.api_key;
       session.profileId = result.profile_id;
+      
+      // Save session to database for persistence across requests
+      await supabase.from('mcp_sessions').upsert({
+        session_id: sessionId,
+        profile_id: result.profile_id,
+        last_used_at: new Date().toISOString(),
+      }, { onConflict: 'session_id' });
+      console.log(`[Session] Saved session ${sessionId} to database for profile ${result.profile_id}`);
+      
       setupRealtimeSubscriptions(sessionId, session);
 
       return {
@@ -313,6 +322,15 @@ async function handleToolCall(
         .limit(1);
 
       session.profileId = profile.id;
+      
+      // Save session to database for persistence across requests
+      await supabase.from('mcp_sessions').upsert({
+        session_id: sessionId,
+        profile_id: profile.id,
+        last_used_at: new Date().toISOString(),
+      }, { onConflict: 'session_id' });
+      console.log(`[Session] Saved session ${sessionId} to database for profile ${profile.id}`);
+      
       // Note: We can't retrieve the actual key from hash, but we can use session-based auth
       setupRealtimeSubscriptions(sessionId, session);
 
@@ -524,6 +542,30 @@ const server = http.createServer(async (req, res) => {
     }
 
     const session = sessions.get(sessionId)!;
+    
+    // Restore session from database if profileId is null but we have a session ID
+    if (!session.profileId && incomingSessionId) {
+      const { data: dbSession } = await supabase
+        .from('mcp_sessions')
+        .select('profile_id')
+        .eq('session_id', incomingSessionId)
+        .single();
+      
+      if (dbSession?.profile_id) {
+        session.profileId = dbSession.profile_id;
+        console.log(`[Session] Restored profile ${session.profileId} from database for session ${sessionId}`);
+        
+        // Update last_used_at
+        await supabase
+          .from('mcp_sessions')
+          .update({ last_used_at: new Date().toISOString() })
+          .eq('session_id', incomingSessionId);
+          
+        // Setup realtime subscriptions for restored session
+        setupRealtimeSubscriptions(sessionId, session);
+      }
+    }
+    
     res.setHeader('Mcp-Session-Id', sessionId);
 
     // GET: SSE stream for push notifications
