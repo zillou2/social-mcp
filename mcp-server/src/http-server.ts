@@ -133,6 +133,28 @@ const TOOLS = [
     description: 'Manually trigger the matching algorithm to find new matches for your intents.',
     inputSchema: { type: 'object', properties: {} },
   },
+  {
+    name: 'social_accept_match',
+    description: 'Accept a match introduction (shorthand for social_respond_match with accept action).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        match_id: { type: 'string', description: 'The match ID to accept' },
+      },
+      required: ['match_id'],
+    },
+  },
+  {
+    name: 'social_reject_match',
+    description: 'Reject a match introduction (shorthand for social_respond_match with reject action).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        match_id: { type: 'string', description: 'The match ID to reject' },
+      },
+      required: ['match_id'],
+    },
+  },
 ];
 
 // API call helper
@@ -501,6 +523,32 @@ async function handleToolCall(
           }],
         };
       }
+    }
+
+    case 'social_accept_match': {
+      if (!session.profileId) {
+        return { content: [{ type: 'text', text: '❌ Please register or login first.' }], isError: true };
+      }
+
+      const result = await apiCall('mcp-match', session, {
+        method: 'POST',
+        body: JSON.stringify({ match_id: args.match_id, action: 'accept' }),
+      });
+
+      return { content: [{ type: 'text', text: `✅ ${result.message}` }] };
+    }
+
+    case 'social_reject_match': {
+      if (!session.profileId) {
+        return { content: [{ type: 'text', text: '❌ Please register or login first.' }], isError: true };
+      }
+
+      const result = await apiCall('mcp-match', session, {
+        method: 'POST',
+        body: JSON.stringify({ match_id: args.match_id, action: 'reject' }),
+      });
+
+      return { content: [{ type: 'text', text: `❌ ${result.message}` }] };
     }
 
     default:
