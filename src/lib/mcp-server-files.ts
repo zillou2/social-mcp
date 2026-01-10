@@ -354,6 +354,11 @@ const TOOLS = [
     description: 'Check for new notifications.',
     inputSchema: { type: 'object', properties: {} },
   },
+  {
+    name: 'social_find_matches',
+    description: 'Manually trigger the matching algorithm to find new matches for your intents.',
+    inputSchema: { type: 'object', properties: {} },
+  },
 ];
 
 async function apiCall(endpoint: string, session: Session, options: RequestInit = {}) {
@@ -530,6 +535,25 @@ async function handleToolCall(
         };
       }
 
+      // Generate a new API key for this session
+      const array = new Uint8Array(32);
+      crypto.getRandomValues(array);
+      const apiKey = 'smcp_' + Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('');
+      
+      // Hash and store it
+      const encoder = new TextEncoder();
+      const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(apiKey));
+      const keyHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+      await supabase.from('mcp_api_keys').insert({
+        profile_id: profile.id,
+        key_hash: keyHash,
+        name: \`MCP Login - \${new Date().toISOString()}\`,
+        scopes: ['read', 'write'],
+        is_active: true,
+      });
+
+      session.apiKey = apiKey;
       session.profileId = profile.id;
       
       // Save session to database for persistence across requests
@@ -649,6 +673,51 @@ async function handleToolCall(
       }).join('\\n');
 
       return { content: [{ type: 'text', text: \`🔔 Notifications:\\n\\n\${list}\` }] };
+    }
+
+    case 'social_get_intents': {
+      if (!session.profileId) {
+        return { content: [{ type: 'text', text: '❌ Please register or login first.' }], isError: true };
+      }
+
+      // Query intents directly from database
+      const { data: intents, error } = await supabase
+        .from('intents')
+        .select('*')
+        .eq('profile_id', session.profileId)
+        .eq('is_active', true);
+
+      if (error) throw error;
+
+      if (!intents?.length) {
+        return { content: [{ type: 'text', text: 'No active intents. Use social_set_intent to set what you\\'re looking for.' }] };
+      }
+
+      const list = intents.map((i: any) => \`• **\${i.category}**: \${i.description}\`).join('\\n');
+      return { content: [{ type: 'text', text: \`📋 Your intents:\\n\\n\${list}\` }] };
+    }
+
+    case 'social_find_matches': {
+      if (!session.profileId) {
+        return { content: [{ type: 'text', text: '❌ Please register or login first.' }], isError: true };
+      }
+
+      try {
+        const result = await apiCall('mcp-find-matches', session, { method: 'POST' });
+        return {
+          content: [{
+            type: 'text',
+            text: \`🔍 Matching complete!\\n\\nNew matches found: \${result.matches_created || 0}\\n\\nUse social_get_matches to see your matches.\`,
+          }],
+        };
+      } catch (error) {
+        return {
+          content: [{
+            type: 'text',
+            text: \`🔍 Matching attempted.\\n\\nCheck social_get_matches to see your current matches.\`,
+          }],
+        };
+      }
     }
 
     default:
