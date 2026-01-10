@@ -22,7 +22,10 @@ serve(async (req) => {
 
     if (intentsError) throw intentsError;
 
+    console.log(`[Match] Found ${intents?.length || 0} active intents`);
+    
     const matchesCreated: string[] = [];
+    let pairsCompared = 0;
 
     // Compare each intent with others
     for (let i = 0; i < intents.length; i++) {
@@ -46,6 +49,8 @@ serve(async (req) => {
         let matchScore = 0;
         let matchReason = '';
 
+        console.log(`[Match] Comparing: ${intentA.profile?.display_name || intentA.profile_id} (${intentA.category}) vs ${intentB.profile?.display_name || intentB.profile_id} (${intentB.category})`);
+        
         try {
           const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
             method: 'POST',
@@ -54,7 +59,7 @@ serve(async (req) => {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              model: 'google/gemini-2.0-flash-001',
+              model: 'google/gemini-3-flash-preview',
               messages: [
                 {
                   role: 'system',
@@ -95,29 +100,43 @@ Analyze and return JSON.`
           if (response.ok) {
             const data = await response.json();
             const content = data.choices?.[0]?.message?.content;
+            console.log(`[Match] AI response: ${content}`);
             if (content) {
               const parsed = JSON.parse(content);
               matchScore = parsed.score || 0;
               matchReason = parsed.reason || '';
             }
+          } else {
+            const errorText = await response.text();
+            console.error(`[Match] AI API error ${response.status}: ${errorText}`);
+            throw new Error(`AI returned ${response.status}`);
           }
         } catch (e) {
-          console.error('AI matching failed:', e);
+          console.error('[Match] AI matching failed, using fallback:', e);
           // Fallback: basic category matching
           if (intentA.category === intentB.category) {
-            matchScore = 0.5;
-            matchReason = 'Same category intent';
+            matchScore = 0.6;
+            matchReason = `Both looking for ${intentA.category} connections`;
           } else if (
             (intentA.category === 'professional' && intentB.category === 'professional') ||
             (intentA.category === 'friendship' && intentB.category === 'friendship')
           ) {
-            matchScore = 0.4;
+            matchScore = 0.5;
             matchReason = 'Related intent categories';
+          } else {
+            matchScore = 0.35;
+            matchReason = 'Potential cross-category connection';
           }
+          console.log(`[Match] Fallback score: ${matchScore}, reason: ${matchReason}`);
         }
+        
+        console.log(`[Match] Final score: ${matchScore}, reason: ${matchReason}`);
 
+        pairsCompared++;
+        
         // Create match if score is above threshold
         if (matchScore >= 0.3) {
+          console.log(`[Match] Creating match with score ${matchScore}`);
           const { data: newMatch, error: matchError } = await supabase
             .from('matches')
             .insert({
@@ -132,16 +151,25 @@ Analyze and return JSON.`
             .select()
             .single();
 
-          if (!matchError && newMatch) {
+          if (matchError) {
+            console.error(`[Match] Failed to create match: ${matchError.message}`);
+          } else if (newMatch) {
+            console.log(`[Match] Created match ${newMatch.id}`);
             matchesCreated.push(newMatch.id);
           }
+        } else {
+          console.log(`[Match] Score ${matchScore} below threshold, skipping`);
         }
       }
     }
 
+    console.log(`[Match] Complete: ${pairsCompared} pairs compared, ${matchesCreated.length} matches created`);
+    
     return new Response(
       JSON.stringify({ 
-        success: true, 
+        success: true,
+        intents_processed: intents.length,
+        pairs_compared: pairsCompared,
         matches_created: matchesCreated.length,
         match_ids: matchesCreated
       }),
