@@ -12,8 +12,11 @@ const cliCommand = `claude mcp add -t sse social-mcp ${MCP_URL}`;
 const configExample = `{
   "mcpServers": {
     "social-mcp": {
-      "transport": "sse",
-      "url": "${MCP_URL}"
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "${MCP_URL}"
+      ]
     }
   }
 }`;
