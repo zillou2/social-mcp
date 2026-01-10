@@ -56,28 +56,9 @@ serve(async (req) => {
         );
       }
 
-      // Generate embedding for the intent description using Lovable AI
-      let embedding = null;
-      try {
-        const embeddingResponse = await fetch('https://ai.gateway.lovable.dev/v1/embeddings', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${Deno.env.get('LOVABLE_API_KEY')}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'openai/text-embedding-3-small',
-            input: `${category}: ${description}. ${JSON.stringify(criteria || {})}`
-          })
-        });
-        
-        if (embeddingResponse.ok) {
-          const embeddingData = await embeddingResponse.json();
-          embedding = embeddingData.data?.[0]?.embedding;
-        }
-      } catch (e) {
-        console.log('Embedding generation failed, continuing without:', e);
-      }
+      // Note: Embedding generation removed - matching uses AI chat completions instead
+      // The mcp-find-matches function handles matching via Lovable AI Gateway
+      const embedding = null;
 
       const { data: intent, error } = await supabase
         .from('intents')
