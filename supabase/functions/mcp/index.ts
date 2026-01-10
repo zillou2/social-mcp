@@ -394,27 +394,71 @@ async function handleToolCall(
       }
 
       const isA = match.profile_a_id === profileId;
-      const updateField = isA ? 'a_accepted_at' : 'b_accepted_at';
-      
-      if (toolArgs.action === 'accept') {
-        const updateData: Record<string, unknown> = {
-          [updateField]: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-        const otherAccepted = isA ? match.b_accepted_at : match.a_accepted_at;
-        if (otherAccepted) updateData.status = 'accepted';
+      const isB = match.profile_b_id === profileId;
 
-        await supabase.from('matches').update(updateData).eq('id', toolArgs.match_id);
-        return { content: [{ type: 'text', text: otherAccepted ? '✅ Match accepted! You can now message each other.' : '✅ You accepted! Waiting for their response.' }] };
-      } else {
+      if (!isA && !isB) {
+        return { content: [{ type: 'text', text: '❌ Not authorized for this match' }], isError: true };
+      }
+      
+      if (toolArgs.action === 'reject') {
         await supabase.from('matches').update({ status: 'rejected', updated_at: new Date().toISOString() }).eq('id', toolArgs.match_id);
         return { content: [{ type: 'text', text: '❌ Match rejected.' }] };
       }
+
+      // Handle accept with proper status transitions
+      const now = new Date().toISOString();
+      const updateData: Record<string, unknown> = { updated_at: now };
+      let newStatus = match.status;
+      let message = '';
+
+      if (isA && match.status === 'pending_a') {
+        updateData.a_accepted_at = now;
+        newStatus = 'pending_b';
+        message = '✅ You accepted! Waiting for their response.';
+      } else if (isB && match.status === 'pending_b') {
+        updateData.b_accepted_at = now;
+        newStatus = 'accepted';
+        message = '✅ Match accepted! You can now message each other.';
+      } else if (isA && match.status === 'pending_b') {
+        message = '⏳ Already waiting for the other party to respond.';
+      } else if (isB && match.status === 'pending_a') {
+        message = '⏳ Waiting for them to see and respond to your match first.';
+      } else if (match.status === 'accepted') {
+        message = '✅ Already connected! Use social_send_message to chat.';
+      } else {
+        message = `⚠️ Cannot accept (status: ${match.status})`;
+      }
+
+      if (newStatus !== match.status) {
+        updateData.status = newStatus;
+        await supabase.from('matches').update(updateData).eq('id', toolArgs.match_id);
+      }
+
+      return { content: [{ type: 'text', text: message }] };
     }
 
     case 'social_send_message': {
       if (!profileId) {
         return { content: [{ type: 'text', text: '❌ Not logged in. Use social_login with your display_name first.' }], isError: true };
+      }
+
+      // Verify match exists and is accepted
+      const { data: msgMatch, error: msgMatchError } = await supabase
+        .from('matches')
+        .select('status, profile_a_id, profile_b_id')
+        .eq('id', toolArgs.match_id)
+        .single();
+
+      if (msgMatchError || !msgMatch) {
+        return { content: [{ type: 'text', text: '❌ Match not found' }], isError: true };
+      }
+
+      if (msgMatch.status !== 'accepted') {
+        return { content: [{ type: 'text', text: '❌ Cannot message until both parties accept the match. Use social_respond_match to accept first.' }], isError: true };
+      }
+
+      if (msgMatch.profile_a_id !== profileId && msgMatch.profile_b_id !== profileId) {
+        return { content: [{ type: 'text', text: '❌ Not authorized for this match' }], isError: true };
       }
 
       const { error } = await supabase.from('messages').insert({
