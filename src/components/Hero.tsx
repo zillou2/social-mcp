@@ -56,12 +56,12 @@ export const Hero = () => {
   return (
     <section className="min-h-screen flex flex-col lg:flex-row">
       {/* Left side - Content */}
-      <div className="flex-1 flex flex-col justify-center px-8 lg:px-16 py-16 lg:py-0">
+      <div className="lg:w-1/2 xl:w-[45%] flex flex-col justify-center px-8 lg:px-12 xl:px-16 py-16 lg:py-0">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
-          className="max-w-xl"
+          className="max-w-lg"
         >
           {/* Tagline */}
           <motion.p
@@ -205,7 +205,7 @@ export const Hero = () => {
         initial={{ opacity: 0, scale: 1.05 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.8 }}
-        className="flex-1 relative min-h-[50vh] lg:min-h-screen"
+        className="lg:w-1/2 xl:w-[55%] relative min-h-[50vh] lg:min-h-screen"
       >
         <img
           src={heroPeople}
