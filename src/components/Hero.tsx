@@ -73,7 +73,7 @@ export const Hero = () => {
             <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
               <Users className="w-5 h-5 text-primary-foreground" />
             </div>
-            <span className="text-xl font-serif italic tracking-tight">social-mcp</span>
+            <span className="text-2xl font-mono tracking-tight">social-mcp</span>
           </motion.div>
 
           {/* Main heading */}
