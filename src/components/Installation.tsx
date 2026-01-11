@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
-import { Copy, Check, Terminal, MessageSquare, Download, Server } from 'lucide-react';
-import { useState, useCallback } from 'react';
+import { Copy, Check, Terminal, MessageSquare, Download, Server, Apple, Monitor } from 'lucide-react';
+import { useState, useCallback, useEffect } from 'react';
 import JSZip from 'jszip';
 import { MCP_SERVER_FILES } from '@/lib/mcp-server-files';
 
@@ -9,17 +9,30 @@ const MCP_URL = 'https://cwaozizmiipxstlwmepk.supabase.co/functions/v1/mcp';
 
 const cliCommand = `claude mcp add -t sse social-mcp ${MCP_URL}`;
 
-const configExample = `{
+type Platform = 'macos' | 'windows';
+
+const macConfig = `{
   "mcpServers": {
     "social-mcp": {
       "command": "npx",
-      "args": [
-        "mcp-remote",
-        "${MCP_URL}"
-      ]
+      "args": ["-y", "mcp-remote", "${MCP_URL}"]
     }
   }
 }`;
+
+const windowsConfig = `{
+  "mcpServers": {
+    "social-mcp": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "mcp-remote", "${MCP_URL}"]
+    }
+  }
+}`;
+
+const configPaths = {
+  macos: '~/Library/Application Support/Claude/claude_desktop_config.json',
+  windows: '%APPDATA%\\Claude\\claude_desktop_config.json',
+};
 
 const steps = [
   {
@@ -34,13 +47,27 @@ const steps = [
   },
 ];
 
+// Auto-detect platform
+const detectPlatform = (): Platform => {
+  const platform = navigator.platform.toLowerCase();
+  if (platform.includes('win')) return 'windows';
+  return 'macos';
+};
+
 export const Installation = () => {
   const [copied, setCopied] = useState(false);
   const [cmdCopied, setCmdCopied] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [platform, setPlatform] = useState<Platform>('macos');
+
+  useEffect(() => {
+    setPlatform(detectPlatform());
+  }, []);
+
+  const currentConfig = platform === 'macos' ? macConfig : windowsConfig;
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(configExample);
+    await navigator.clipboard.writeText(currentConfig);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -154,7 +181,7 @@ export const Installation = () => {
           </div>
         </motion.div>
 
-        {/* Config Example */}
+        {/* Config Example with Platform Toggle */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -162,31 +189,64 @@ export const Installation = () => {
           transition={{ duration: 0.6, delay: 0.3 }}
           className="bg-card/50 backdrop-blur-sm border border-border rounded-xl p-6"
         >
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-sm font-medium text-muted-foreground">
-              Or add to config manually (claude_desktop_config.json)
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleCopy}
-              className="text-xs"
-            >
-              {copied ? (
-                <>
-                  <Check className="w-3 h-3 mr-1" />
-                  Copied!
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3 h-3 mr-1" />
-                  Copy Config
-                </>
-              )}
-            </Button>
+          <div className="flex flex-col gap-4 mb-4">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-muted-foreground">
+                Or add to config manually
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleCopy}
+                className="text-xs"
+              >
+                {copied ? (
+                  <>
+                    <Check className="w-3 h-3 mr-1" />
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3 h-3 mr-1" />
+                    Copy Config
+                  </>
+                )}
+              </Button>
+            </div>
+            
+            {/* Platform Toggle */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Platform:</span>
+              <div className="flex bg-muted/50 rounded-lg p-1">
+                <Button
+                  variant={platform === 'macos' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setPlatform('macos')}
+                  className="text-xs h-7 px-3"
+                >
+                  <Apple className="w-3 h-3 mr-1" />
+                  macOS/Linux
+                </Button>
+                <Button
+                  variant={platform === 'windows' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setPlatform('windows')}
+                  className="text-xs h-7 px-3"
+                >
+                  <Monitor className="w-3 h-3 mr-1" />
+                  Windows
+                </Button>
+              </div>
+            </div>
+            
+            {/* Config Path */}
+            <div className="text-xs text-muted-foreground bg-muted/30 rounded-md px-3 py-2 font-mono break-all">
+              📁 {configPaths[platform]}
+            </div>
           </div>
+          
           <pre className="text-sm overflow-x-auto">
-            <code className="text-foreground/90">{configExample}</code>
+            <code className="text-foreground/90">{currentConfig}</code>
           </pre>
         </motion.div>
 
