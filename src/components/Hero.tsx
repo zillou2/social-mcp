@@ -156,15 +156,15 @@ export const Hero = () => {
                 <p className="text-xs text-muted-foreground mb-2 font-mono">
                   {configPaths[platform]}
                 </p>
-                <div className="relative">
-                  <pre className="bg-card border border-border rounded-lg p-4 text-xs overflow-x-auto">
+                <div className="relative bg-card border border-border rounded-lg">
+                  <pre className="p-4 pr-16 text-xs overflow-x-auto whitespace-pre-wrap break-all">
                     <code>{currentConfig}</code>
                   </pre>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={handleCopy}
-                    className="absolute top-2 right-2 h-7 text-xs"
+                    className="absolute top-2 right-2 h-7 text-xs bg-card"
                   >
                     {copied ? (
                       <>
