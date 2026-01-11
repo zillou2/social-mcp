@@ -68,12 +68,12 @@ export const Hero = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.2 }}
-            className="flex items-center gap-2 mb-6"
+            className="flex items-center gap-2.5 mb-6"
           >
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-              <Users className="w-4 h-4 text-primary-foreground" />
+            <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
+              <Users className="w-5 h-5 text-primary-foreground" />
             </div>
-            <span className="text-lg font-medium tracking-tight">social-mcp</span>
+            <span className="text-xl font-serif italic tracking-tight">social-mcp</span>
           </motion.div>
 
           {/* Main heading */}
