@@ -11,40 +11,40 @@ import {
 const features = [
   {
     icon: Zap,
-    title: 'MCP Native',
-    description: 'Built on Model Context Protocol for seamless AI integration. Works with ChatGPT, Claude, Gemini, and more.',
+    title: 'Works with any AI',
+    description: 'Built on MCP protocol. Compatible with Claude, ChatGPT, Gemini, and more.',
   },
   {
     icon: Shield,
-    title: 'Privacy First',
-    description: 'You control what you share. Granular privacy settings let you decide what\'s visible to matches.',
-  },
-  {
-    icon: Sparkles,
-    title: 'AI-Powered Matching',
-    description: 'Hybrid algorithm combining classical matching with LLM intelligence for deeper compatibility.',
+    title: 'Privacy first',
+    description: 'You control exactly what you share. Granular privacy settings for every field.',
   },
   {
     icon: Lock,
-    title: 'Double Validation',
-    description: 'Both parties must accept before introduction. No unwanted messages or spam.',
+    title: 'Mutual consent',
+    description: 'Both parties must accept before any introduction. No unwanted contact.',
   },
   {
     icon: Bell,
-    title: 'Push Notifications',
-    description: 'Get notified of new matches and messages directly in your LLM chat via MCP subscriptions.',
+    title: 'Real-time notifications',
+    description: 'Get notified of matches and messages directly in your AI chat.',
+  },
+  {
+    icon: Sparkles,
+    title: 'Intelligent matching',
+    description: 'AI-powered algorithm that understands context and compatibility.',
   },
   {
     icon: Globe,
-    title: 'Universal Access',
-    description: 'One network, every AI. Your profile and connections work across all MCP-enabled assistants.',
+    title: 'Open & free',
+    description: 'Open source project. No fees, no premium tiers, no hidden costs.',
   },
 ];
 
 export const Features = () => {
   return (
-    <section className="relative py-32 px-6 bg-muted/30">
-      <div className="container max-w-6xl mx-auto">
+    <section className="py-24 px-8 lg:px-16 border-t border-border">
+      <div className="max-w-5xl mx-auto">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -52,30 +52,31 @@ export const Features = () => {
           viewport={{ once: true }}
           className="text-center mb-16"
         >
-          <h2 className="text-4xl md:text-5xl font-display font-bold mb-6">
-            Built for the <span className="gradient-text">AI Era</span>
+          <h2 className="text-3xl md:text-4xl font-serif font-medium mb-4">
+            Built for humans
           </h2>
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Privacy-first, AI-native social networking that respects your boundaries.
+          <p className="text-muted-foreground max-w-xl mx-auto">
+            Technology that serves connection, not isolation.
           </p>
         </motion.div>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
           {features.map((feature, index) => (
             <motion.div
               key={index}
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: index * 0.1 }}
+              transition={{ duration: 0.5, delay: index * 0.05 }}
               viewport={{ once: true }}
-              className="group"
             >
-              <div className="h-full p-6 rounded-2xl bg-card border border-border hover:border-primary/50 transition-all duration-300 hover:shadow-xl hover:shadow-primary/5">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                  <feature.icon className="w-6 h-6 text-primary" />
+              <div className="flex gap-4">
+                <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+                  <feature.icon className="w-5 h-5 text-foreground" />
                 </div>
-                <h3 className="text-xl font-display font-semibold mb-2">{feature.title}</h3>
-                <p className="text-muted-foreground text-sm leading-relaxed">{feature.description}</p>
+                <div>
+                  <h3 className="font-medium mb-1">{feature.title}</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{feature.description}</p>
+                </div>
               </div>
             </motion.div>
           ))}

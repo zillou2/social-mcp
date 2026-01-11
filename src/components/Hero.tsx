@@ -1,48 +1,88 @@
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { ArrowRight, Sparkles, Zap, Users } from 'lucide-react';
+import { Copy, Check, ExternalLink, Apple, Monitor } from 'lucide-react';
 import { motion } from 'framer-motion';
+import heroPeople from '@/assets/hero-people.jpg';
 
-interface HeroProps {
-  onGetStarted: () => void;
-}
+const MCP_URL = 'https://cwaozizmiipxstlwmepk.supabase.co/functions/v1/mcp';
 
-export const Hero = ({ onGetStarted }: HeroProps) => {
+type Platform = 'macos' | 'windows';
+
+const macConfig = `{
+  "mcpServers": {
+    "social-mcp": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "${MCP_URL}"]
+    }
+  }
+}`;
+
+const windowsConfig = `{
+  "mcpServers": {
+    "social-mcp": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "mcp-remote", "${MCP_URL}"]
+    }
+  }
+}`;
+
+const configPaths = {
+  macos: '~/Library/Application Support/Claude/claude_desktop_config.json',
+  windows: '%APPDATA%\\Claude\\claude_desktop_config.json',
+};
+
+const detectPlatform = (): Platform => {
+  const platform = navigator.platform.toLowerCase();
+  if (platform.includes('win')) return 'windows';
+  return 'macos';
+};
+
+export const Hero = () => {
+  const [copied, setCopied] = useState(false);
+  const [platform, setPlatform] = useState<Platform>('macos');
+
+  useEffect(() => {
+    setPlatform(detectPlatform());
+  }, []);
+
+  const currentConfig = platform === 'macos' ? macConfig : windowsConfig;
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(currentConfig);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
-    <section className="relative min-h-screen flex items-center justify-center px-6 py-20 overflow-hidden">
-      {/* Gradient orbs */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/20 rounded-full blur-3xl animate-pulse-glow" />
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-secondary/20 rounded-full blur-3xl animate-pulse-glow" style={{ animationDelay: '1s' }} />
-      
-      <div className="container max-w-6xl mx-auto text-center relative z-10">
+    <section className="min-h-screen flex flex-col lg:flex-row">
+      {/* Left side - Content */}
+      <div className="flex-1 flex flex-col justify-center px-8 lg:px-16 py-16 lg:py-0">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
-          className="space-y-8"
+          className="max-w-xl"
         >
-          {/* Badge */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5, delay: 0.2 }}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass border border-primary/30"
+          {/* Tagline */}
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.2 }}
+            className="text-sm uppercase tracking-widest text-muted-foreground mb-4"
           >
-            <Sparkles className="w-4 h-4 text-primary" />
-            <span className="text-sm font-medium text-primary">MCP-Powered Social Network</span>
-          </motion.div>
+            Bringing humanity back to AI
+          </motion.p>
 
           {/* Main heading */}
           <motion.h1
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.3 }}
-            className="text-5xl md:text-7xl lg:text-8xl font-display font-bold leading-tight"
+            className="text-4xl md:text-5xl lg:text-6xl font-serif font-medium leading-tight mb-6"
           >
-            <span className="text-foreground">The First</span>
+            Meet real people
             <br />
-            <span className="gradient-text text-glow">Social Network</span>
-            <br />
-            <span className="text-foreground">of the AI Era</span>
+            <span className="italic">through your AI</span>
           </motion.h1>
 
           {/* Subtitle */}
@@ -50,70 +90,130 @@ export const Hero = ({ onGetStarted }: HeroProps) => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.4 }}
-            className="text-xl md:text-2xl text-muted-foreground max-w-3xl mx-auto leading-relaxed"
+            className="text-lg text-muted-foreground mb-10 leading-relaxed"
           >
-            Connect with people through your AI assistant. Define your intent, 
-            share your profile, and let your LLM find meaningful connections.
+            In a world where AI isolates us behind screens, Social MCP creates genuine human connections. 
+            Your assistant finds people you should actually meet.
           </motion.p>
 
-          {/* CTA Buttons */}
+          {/* Installation Steps */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.5 }}
-            className="flex flex-col sm:flex-row gap-4 justify-center items-center pt-4"
+            className="space-y-6"
           >
-            <Button variant="hero" size="xl" onClick={onGetStarted} className="group">
-              Enable Social MCP
-              <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-            </Button>
-            <Button variant="glass" size="xl">
-              Watch Demo
-              <Zap className="w-5 h-5" />
-            </Button>
-          </motion.div>
-
-          {/* Stats */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.6 }}
-            className="grid grid-cols-3 gap-8 pt-16 max-w-2xl mx-auto"
-          >
-            {[
-              { value: '10K+', label: 'Active Users' },
-              { value: '50K+', label: 'Connections Made' },
-              { value: '98%', label: 'Match Success' },
-            ].map((stat, i) => (
-              <div key={i} className="text-center">
-                <div className="text-3xl md:text-4xl font-display font-bold gradient-text">{stat.value}</div>
-                <div className="text-sm text-muted-foreground mt-1">{stat.label}</div>
+            {/* Step 1 */}
+            <div className="flex gap-4">
+              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium">
+                1
               </div>
-            ))}
+              <div className="flex-1">
+                <p className="font-medium mb-2">Install Claude Desktop</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  asChild
+                  className="text-sm"
+                >
+                  <a href="https://claude.ai/download" target="_blank" rel="noopener noreferrer">
+                    Download Claude Desktop
+                    <ExternalLink className="w-3.5 h-3.5 ml-2" />
+                  </a>
+                </Button>
+              </div>
+            </div>
+
+            {/* Step 2 */}
+            <div className="flex gap-4">
+              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium">
+                2
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="font-medium">Add this to your config</p>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant={platform === 'macos' ? 'secondary' : 'ghost'}
+                      size="sm"
+                      onClick={() => setPlatform('macos')}
+                      className="h-7 px-2 text-xs"
+                    >
+                      <Apple className="w-3 h-3 mr-1" />
+                      Mac
+                    </Button>
+                    <Button
+                      variant={platform === 'windows' ? 'secondary' : 'ghost'}
+                      size="sm"
+                      onClick={() => setPlatform('windows')}
+                      className="h-7 px-2 text-xs"
+                    >
+                      <Monitor className="w-3 h-3 mr-1" />
+                      Win
+                    </Button>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mb-2 font-mono">
+                  {configPaths[platform]}
+                </p>
+                <div className="relative">
+                  <pre className="bg-card border border-border rounded-lg p-4 text-xs overflow-x-auto">
+                    <code>{currentConfig}</code>
+                  </pre>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleCopy}
+                    className="absolute top-2 right-2 h-7 text-xs"
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="w-3 h-3 mr-1" />
+                        Copied
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3 mr-1" />
+                        Copy
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Step 3 */}
+            <div className="flex gap-4">
+              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium">
+                3
+              </div>
+              <div className="flex-1">
+                <p className="font-medium mb-2">Tell Claude:</p>
+                <div className="bg-card border border-border rounded-lg p-4">
+                  <p className="font-serif text-lg italic text-foreground">
+                    "Register me to Social MCP!"
+                  </p>
+                </div>
+              </div>
+            </div>
           </motion.div>
-        </motion.div>
-
-        {/* Floating icons */}
-        <motion.div
-          animate={{ y: [0, -10, 0] }}
-          transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-          className="absolute top-20 left-20 hidden lg:block"
-        >
-          <div className="w-16 h-16 rounded-2xl glass border border-primary/30 flex items-center justify-center">
-            <Users className="w-8 h-8 text-primary" />
-          </div>
-        </motion.div>
-
-        <motion.div
-          animate={{ y: [0, 10, 0] }}
-          transition={{ duration: 5, repeat: Infinity, ease: "easeInOut", delay: 1 }}
-          className="absolute bottom-32 right-20 hidden lg:block"
-        >
-          <div className="w-16 h-16 rounded-2xl glass border border-secondary/30 flex items-center justify-center">
-            <Sparkles className="w-8 h-8 text-secondary" />
-          </div>
         </motion.div>
       </div>
+
+      {/* Right side - Image */}
+      <motion.div
+        initial={{ opacity: 0, scale: 1.05 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.8 }}
+        className="flex-1 relative min-h-[50vh] lg:min-h-screen"
+      >
+        <img
+          src={heroPeople}
+          alt="People connecting over coffee"
+          className="absolute inset-0 w-full h-full object-cover"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-background/30 to-transparent lg:bg-gradient-to-r lg:from-background lg:via-transparent lg:to-transparent" />
+      </motion.div>
     </section>
   );
 };
