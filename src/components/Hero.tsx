@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Copy, Check, ExternalLink, Apple, Monitor } from 'lucide-react';
+import { Copy, Check, ExternalLink, Apple, Monitor, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
 import heroPeople from '@/assets/hero-people.jpg';
 
@@ -63,15 +63,18 @@ export const Hero = () => {
           transition={{ duration: 0.6 }}
           className="max-w-lg"
         >
-          {/* Tagline */}
-          <motion.p
+          {/* Logo */}
+          <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.2 }}
-            className="text-sm uppercase tracking-widest text-muted-foreground mb-4"
+            className="flex items-center gap-2 mb-6"
           >
-            Bringing humanity back to AI
-          </motion.p>
+            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+              <Users className="w-4 h-4 text-primary-foreground" />
+            </div>
+            <span className="text-lg font-medium tracking-tight">social-mcp</span>
+          </motion.div>
 
           {/* Main heading */}
           <motion.h1
