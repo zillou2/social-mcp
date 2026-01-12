@@ -41,6 +41,7 @@ const detectPlatform = (): Platform => {
 export const Hero = () => {
   const [copied, setCopied] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [copiedSettingsUrl, setCopiedSettingsUrl] = useState(false);
   const [claudeMode, setClaudeMode] = useState<ClaudeMode>('web');
   const [platform, setPlatform] = useState<Platform>('macos');
 
@@ -60,6 +61,12 @@ export const Hero = () => {
     await navigator.clipboard.writeText(MCP_URL);
     setCopiedUrl(true);
     setTimeout(() => setCopiedUrl(false), 2000);
+  };
+
+  const handleCopySettingsUrl = async () => {
+    await navigator.clipboard.writeText('claude.ai/settings/integrations');
+    setCopiedSettingsUrl(true);
+    setTimeout(() => setCopiedSettingsUrl(false), 2000);
   };
 
   return (
@@ -155,16 +162,31 @@ export const Hero = () => {
                     1
                   </div>
                   <div className="flex-1">
-                    <p className="font-medium mb-2">Go to Claude Settings → Integrations</p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-sm"
-                      onClick={() => window.open('https://claude.ai/settings/integrations', '_blank', 'noopener,noreferrer')}
-                    >
-                      Open Settings
-                      <ExternalLink className="w-3.5 h-3.5 ml-2" />
-                    </Button>
+                    <p className="font-medium mb-3">Go to Claude Settings → Integrations</p>
+                    <div className="bg-card border border-border rounded-lg p-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-xs text-muted-foreground">Open this URL in a new tab</p>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleCopySettingsUrl}
+                          className="h-6 text-xs -mr-2"
+                        >
+                          {copiedSettingsUrl ? (
+                            <>
+                              <Check className="w-3 h-3 mr-1" />
+                              Copied
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3 h-3 mr-1" />
+                              Copy
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                      <p className="font-mono text-sm">claude.ai/settings/integrations</p>
+                    </div>
                   </div>
                 </div>
 
