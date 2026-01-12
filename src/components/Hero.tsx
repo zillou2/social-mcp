@@ -163,30 +163,14 @@ export const Hero = () => {
                   </div>
                   <div className="flex-1">
                     <p className="font-medium mb-3">Go to Claude Settings → Connectors</p>
-                    <div className="bg-card border border-border rounded-lg p-3">
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="text-xs text-muted-foreground">Open this URL in a new tab</p>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={handleCopySettingsUrl}
-                          className="h-6 text-xs -mr-2"
-                        >
-                          {copiedSettingsUrl ? (
-                            <>
-                              <Check className="w-3 h-3 mr-1" />
-                              Copied
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3 h-3 mr-1" />
-                              Copy
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                      <p className="font-mono text-sm">claude.ai/settings/connectors</p>
-                    </div>
+                    <a 
+                      href="https://claude.ai/settings/connectors"
+                      target="_blank"
+                      className="inline-flex items-center gap-2 text-primary hover:underline font-mono text-sm"
+                    >
+                      claude.ai/settings/connectors
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
                   </div>
                 </div>
 
