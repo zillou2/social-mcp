@@ -561,25 +561,28 @@ async function handleToolCall(
 
       const sections: string[] = [];
 
-      // a) New potential matches (pending_a where I'm profile_a, or pending_b where I'm profile_b)
+      // a) New potential matches (pending_a where I'm profile_a - fresh matches awaiting my first response)
       const { data: pendingMatches } = await supabase
         .from('matches')
         .select(`*, profile_a:profiles!matches_profile_a_id_fkey(display_name), profile_b:profiles!matches_profile_b_id_fkey(display_name), intent_a:intents!matches_intent_a_id_fkey(description), intent_b:intents!matches_intent_b_id_fkey(description)`)
-        .or(`and(profile_a_id.eq.${profileId},status.eq.pending_a),and(profile_b_id.eq.${profileId},status.eq.pending_b)`)
+        .eq('profile_a_id', profileId)
+        .eq('status', 'pending_a')
         .order('created_at', { ascending: false });
 
       if (pendingMatches?.length) {
-        sections.push('🎉 **New Potential Matches** (awaiting your response):');
-        for (const m of pendingMatches) {
-          const isA = m.profile_a_id === profileId;
-          const otherName = isA ? m.profile_b?.display_name : m.profile_a?.display_name;
-          const theirIntent = isA ? m.intent_b?.description : m.intent_a?.description;
+        sections.push(`🎉 **New Potential Matches** (${pendingMatches.length} awaiting your response):`);
+        for (const m of pendingMatches.slice(0, 5)) { // Show top 5
+          const otherName = m.profile_b?.display_name;
+          const theirIntent = m.intent_b?.description;
           const score = Math.round(m.match_score * 100);
           sections.push(`  • ${otherName} (${score}%): "${theirIntent}"\n    → social_respond_match match_id="${m.id}" action="accept"`);
         }
+        if (pendingMatches.length > 5) {
+          sections.push(`  ... and ${pendingMatches.length - 5} more. Use social_get_matches for full list.`);
+        }
       }
 
-      // b) Connection requests received (pending_b where I'm profile_b - they accepted, waiting for me)
+      // b) Connection requests received (pending_b where I'm profile_b - they accepted first, now waiting for me!)
       const { data: connectionRequests } = await supabase
         .from('matches')
         .select(`*, profile_a:profiles!matches_profile_a_id_fkey(display_name), intent_a:intents!matches_intent_a_id_fkey(description)`)
@@ -588,9 +591,10 @@ async function handleToolCall(
         .order('updated_at', { ascending: false });
 
       if (connectionRequests?.length) {
-        sections.push('\n📩 **Connection Requests** (they accepted, your turn!):');
+        sections.push(`\n📩 **Connection Requests** (${connectionRequests.length} people want to connect with you!):`);
         for (const m of connectionRequests) {
-          sections.push(`  • ${m.profile_a?.display_name} wants to connect!\n    → social_respond_match match_id="${m.id}" action="accept"`);
+          const score = Math.round(m.match_score * 100);
+          sections.push(`  • **${m.profile_a?.display_name}** wants to connect! (${score}% match)\n    Their intent: "${m.intent_a?.description}"\n    → social_respond_match match_id="${m.id}" action="accept" to connect!`);
         }
       }
 
