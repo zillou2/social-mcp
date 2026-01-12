@@ -47,3 +47,49 @@ export async function generateApiKey(): Promise<{ apiKey: string; keyHash: strin
 
   return { apiKey, keyHash };
 }
+
+/**
+ * Validates profile ID directly (for session-based auth fallback)
+ * This is used when API key auth fails but we have a profile_id header
+ */
+export async function validateProfileId(profileId: string): Promise<{ valid: boolean; profileId?: string }> {
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  );
+
+  // Check if profile exists and is active
+  const { data: profile, error } = await supabase
+    .from('profiles')
+    .select('id, is_active')
+    .eq('id', profileId)
+    .single();
+
+  if (error || !profile || !profile.is_active) {
+    return { valid: false };
+  }
+
+  return { valid: true, profileId: profile.id };
+}
+
+/**
+ * Authenticate request using API key or profile_id header
+ * Returns profileId if valid, null otherwise
+ */
+export async function authenticateRequest(req: Request): Promise<string | null> {
+  // First try API key
+  const apiKey = req.headers.get('x-mcp-api-key');
+  if (apiKey) {
+    const { valid, profileId } = await validateMcpApiKey(apiKey);
+    if (valid && profileId) return profileId;
+  }
+  
+  // Fallback to profile_id header (for clients with session issues like Claude Web)
+  const profileIdHeader = req.headers.get('x-mcp-profile-id');
+  if (profileIdHeader) {
+    const { valid, profileId } = await validateProfileId(profileIdHeader);
+    if (valid && profileId) return profileId;
+  }
+  
+  return null;
+}
