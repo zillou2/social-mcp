@@ -159,13 +159,11 @@ export const Hero = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      asChild
                       className="text-sm"
+                      onClick={() => window.open('https://claude.ai/settings/integrations', '_blank', 'noopener,noreferrer')}
                     >
-                      <a href="https://claude.ai/settings/integrations" target="_blank" rel="noopener noreferrer">
-                        Open Settings
-                        <ExternalLink className="w-3.5 h-3.5 ml-2" />
-                      </a>
+                      Open Settings
+                      <ExternalLink className="w-3.5 h-3.5 ml-2" />
                     </Button>
                   </div>
                 </div>
