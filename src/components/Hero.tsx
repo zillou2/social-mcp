@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Copy, Check, ExternalLink, Apple, Monitor, Users } from 'lucide-react';
+import { Copy, Check, ExternalLink, Apple, Monitor, Users, Globe } from 'lucide-react';
 import { motion } from 'framer-motion';
 import heroPeople from '@/assets/hero-people.jpg';
 
 const MCP_URL = 'https://cwaozizmiipxstlwmepk.supabase.co/functions/v1/mcp';
 
+type ClaudeMode = 'web' | 'desktop';
 type Platform = 'macos' | 'windows';
 
 const macConfig = `{
@@ -39,6 +40,8 @@ const detectPlatform = (): Platform => {
 
 export const Hero = () => {
   const [copied, setCopied] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
+  const [claudeMode, setClaudeMode] = useState<ClaudeMode>('web');
   const [platform, setPlatform] = useState<Platform>('macos');
 
   useEffect(() => {
@@ -51,6 +54,12 @@ export const Hero = () => {
     await navigator.clipboard.writeText(currentConfig);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCopyUrl = async () => {
+    await navigator.clipboard.writeText(MCP_URL);
+    setCopiedUrl(true);
+    setTimeout(() => setCopiedUrl(false), 2000);
   };
 
   return (
@@ -99,106 +108,220 @@ export const Hero = () => {
             Your assistant finds people you should actually meet.
           </motion.p>
 
-          {/* Installation Steps */}
+          {/* Mode Toggle */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.5 }}
+            className="mb-6"
+          >
+            <div className="inline-flex items-center gap-1 p-1 bg-muted rounded-lg">
+              <Button
+                variant={claudeMode === 'web' ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={() => setClaudeMode('web')}
+                className="h-8 px-3 text-sm"
+              >
+                <Globe className="w-4 h-4 mr-1.5" />
+                Claude Web
+              </Button>
+              <Button
+                variant={claudeMode === 'desktop' ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={() => setClaudeMode('desktop')}
+                className="h-8 px-3 text-sm"
+              >
+                <Monitor className="w-4 h-4 mr-1.5" />
+                Claude Desktop
+              </Button>
+            </div>
+            {claudeMode === 'web' && (
+              <p className="text-xs text-muted-foreground mt-2">Requires Claude Pro, Team, or Enterprise</p>
+            )}
+          </motion.div>
+
+          {/* Installation Steps */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.6 }}
             className="space-y-6"
           >
-            {/* Step 1 */}
-            <div className="flex gap-4">
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium">
-                1
-              </div>
-              <div className="flex-1">
-                <p className="font-medium mb-2">Install Claude Desktop</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  asChild
-                  className="text-sm"
-                >
-                  <a href="https://claude.ai/download" target="_blank" rel="noopener noreferrer">
-                    Download Claude Desktop
-                    <ExternalLink className="w-3.5 h-3.5 ml-2" />
-                  </a>
-                </Button>
-              </div>
-            </div>
-
-            {/* Step 2 */}
-            <div className="flex gap-4">
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium">
-                2
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="font-medium">Add this to your config</p>
-                  <div className="flex items-center gap-1">
+            {claudeMode === 'web' ? (
+              <>
+                {/* Web Step 1 */}
+                <div className="flex gap-4">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium">
+                    1
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium mb-2">Go to Claude Settings → Integrations</p>
                     <Button
-                      variant={platform === 'macos' ? 'secondary' : 'ghost'}
+                      variant="outline"
                       size="sm"
-                      onClick={() => setPlatform('macos')}
-                      className="h-7 px-2 text-xs"
+                      asChild
+                      className="text-sm"
                     >
-                      <Apple className="w-3 h-3 mr-1" />
-                      Mac
-                    </Button>
-                    <Button
-                      variant={platform === 'windows' ? 'secondary' : 'ghost'}
-                      size="sm"
-                      onClick={() => setPlatform('windows')}
-                      className="h-7 px-2 text-xs"
-                    >
-                      <Monitor className="w-3 h-3 mr-1" />
-                      Win
+                      <a href="https://claude.ai/settings/integrations" target="_blank" rel="noopener noreferrer">
+                        Open Settings
+                        <ExternalLink className="w-3.5 h-3.5 ml-2" />
+                      </a>
                     </Button>
                   </div>
                 </div>
-                <p className="text-xs text-muted-foreground mb-2 font-mono">
-                  {configPaths[platform]}
-                </p>
-                <div className="relative bg-card border border-border rounded-lg">
-                  <pre className="p-4 pr-16 text-xs overflow-x-auto whitespace-pre-wrap break-all">
-                    <code>{currentConfig}</code>
-                  </pre>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleCopy}
-                    className="absolute top-2 right-2 h-7 text-xs bg-card"
-                  >
-                    {copied ? (
-                      <>
-                        <Check className="w-3 h-3 mr-1" />
-                        Copied
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3 h-3 mr-1" />
-                        Copy
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </div>
 
-            {/* Step 3 */}
-            <div className="flex gap-4">
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium">
-                3
-              </div>
-              <div className="flex-1">
-                <p className="font-medium mb-2">Tell Claude:</p>
-                <div className="bg-card border border-border rounded-lg p-4">
-                  <p className="font-serif text-lg italic text-foreground">
-                    "Register me to Social MCP!"
-                  </p>
+                {/* Web Step 2 */}
+                <div className="flex gap-4">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium">
+                    2
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium mb-3">Add a new integration with these details:</p>
+                    <div className="space-y-3">
+                      <div className="bg-card border border-border rounded-lg p-3">
+                        <p className="text-xs text-muted-foreground mb-1">Name</p>
+                        <p className="font-mono text-sm">social-mcp</p>
+                      </div>
+                      <div className="bg-card border border-border rounded-lg p-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="text-xs text-muted-foreground">URL</p>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleCopyUrl}
+                            className="h-6 text-xs -mr-2"
+                          >
+                            {copiedUrl ? (
+                              <>
+                                <Check className="w-3 h-3 mr-1" />
+                                Copied
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3 h-3 mr-1" />
+                                Copy
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                        <p className="font-mono text-xs break-all">{MCP_URL}</p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
+
+                {/* Web Step 3 */}
+                <div className="flex gap-4">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium">
+                    3
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium mb-2">Tell Claude:</p>
+                    <div className="bg-card border border-border rounded-lg p-4">
+                      <p className="font-serif text-lg italic text-foreground">
+                        "Register me to Social MCP!"
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Desktop Step 1 */}
+                <div className="flex gap-4">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium">
+                    1
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium mb-2">Install Claude Desktop</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      asChild
+                      className="text-sm"
+                    >
+                      <a href="https://claude.ai/download" target="_blank" rel="noopener noreferrer">
+                        Download Claude Desktop
+                        <ExternalLink className="w-3.5 h-3.5 ml-2" />
+                      </a>
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Desktop Step 2 */}
+                <div className="flex gap-4">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium">
+                    2
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="font-medium">Add this to your config</p>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant={platform === 'macos' ? 'secondary' : 'ghost'}
+                          size="sm"
+                          onClick={() => setPlatform('macos')}
+                          className="h-7 px-2 text-xs"
+                        >
+                          <Apple className="w-3 h-3 mr-1" />
+                          Mac
+                        </Button>
+                        <Button
+                          variant={platform === 'windows' ? 'secondary' : 'ghost'}
+                          size="sm"
+                          onClick={() => setPlatform('windows')}
+                          className="h-7 px-2 text-xs"
+                        >
+                          <Monitor className="w-3 h-3 mr-1" />
+                          Win
+                        </Button>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-2 font-mono">
+                      {configPaths[platform]}
+                    </p>
+                    <div className="relative bg-card border border-border rounded-lg">
+                      <pre className="p-4 pr-16 text-xs overflow-x-auto whitespace-pre-wrap break-all">
+                        <code>{currentConfig}</code>
+                      </pre>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleCopy}
+                        className="absolute top-2 right-2 h-7 text-xs bg-card"
+                      >
+                        {copied ? (
+                          <>
+                            <Check className="w-3 h-3 mr-1" />
+                            Copied
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3 mr-1" />
+                            Copy
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Desktop Step 3 */}
+                <div className="flex gap-4">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium">
+                    3
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium mb-2">Tell Claude:</p>
+                    <div className="bg-card border border-border rounded-lg p-4">
+                      <p className="font-serif text-lg italic text-foreground">
+                        "Register me to Social MCP!"
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
           </motion.div>
         </motion.div>
       </div>
