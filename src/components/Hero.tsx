@@ -64,7 +64,7 @@ export const Hero = () => {
   };
 
   const handleCopySettingsUrl = async () => {
-    await navigator.clipboard.writeText('claude.ai/settings/integrations');
+    await navigator.clipboard.writeText('claude.ai/settings/connectors');
     setCopiedSettingsUrl(true);
     setTimeout(() => setCopiedSettingsUrl(false), 2000);
   };
@@ -142,9 +142,9 @@ export const Hero = () => {
                 Claude Desktop
               </Button>
             </div>
-            {claudeMode === 'web' && (
-              <p className="text-xs text-muted-foreground mt-2">Requires Claude Pro, Team, or Enterprise</p>
-            )}
+  {claudeMode === 'web' && (
+    <p className="text-xs text-muted-foreground mt-2">Requires Claude Pro, Max, Team, or Enterprise</p>
+  )}
           </motion.div>
 
           {/* Installation Steps */}
@@ -162,7 +162,7 @@ export const Hero = () => {
                     1
                   </div>
                   <div className="flex-1">
-                    <p className="font-medium mb-3">Go to Claude Settings → Integrations</p>
+                    <p className="font-medium mb-3">Go to Claude Settings → Connectors</p>
                     <div className="bg-card border border-border rounded-lg p-3">
                       <div className="flex items-center justify-between mb-1">
                         <p className="text-xs text-muted-foreground">Open this URL in a new tab</p>
@@ -185,7 +185,7 @@ export const Hero = () => {
                           )}
                         </Button>
                       </div>
-                      <p className="font-mono text-sm">claude.ai/settings/integrations</p>
+                      <p className="font-mono text-sm">claude.ai/settings/connectors</p>
                     </div>
                   </div>
                 </div>
