@@ -52,7 +52,7 @@ const TOOLS = [
   },
   {
     name: 'social_set_intent',
-    description: 'Set what kind of connections you are looking for. Requires login first.',
+    description: 'Set what kind of connections you are looking for. Requires login first. If session is lost, pass your profile_id directly.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -63,64 +63,88 @@ const TOOLS = [
         },
         description: { type: 'string', description: 'What you are looking for' },
         criteria: { type: 'object', description: 'Additional criteria (optional)' },
+        profile_id: { type: 'string', description: 'Your profile ID (optional, use if session auth fails)' },
       },
       required: ['category', 'description'],
     },
   },
   {
     name: 'social_get_intents',
-    description: 'Get your current active intents. Requires login first.',
-    inputSchema: { type: 'object', properties: {} },
+    description: 'Get your current active intents. Requires login first. If session is lost, pass your profile_id directly.',
+    inputSchema: { 
+      type: 'object', 
+      properties: {
+        profile_id: { type: 'string', description: 'Your profile ID (optional, use if session auth fails)' },
+      }
+    },
   },
   {
     name: 'social_get_matches',
-    description: 'Get your current matches and pending introductions. Requires login first.',
-    inputSchema: { type: 'object', properties: {} },
+    description: 'Get your current matches and pending introductions. Requires login first. If session is lost, pass your profile_id directly.',
+    inputSchema: { 
+      type: 'object', 
+      properties: {
+        profile_id: { type: 'string', description: 'Your profile ID (optional, use if session auth fails)' },
+      }
+    },
   },
   {
     name: 'social_respond_match',
-    description: 'Accept or reject a match introduction. Requires login first.',
+    description: 'Accept or reject a match introduction. Requires login first. If session is lost, pass your profile_id directly.',
     inputSchema: {
       type: 'object',
       properties: {
         match_id: { type: 'string', description: 'The match ID' },
         action: { type: 'string', enum: ['accept', 'reject'], description: 'Accept or reject' },
+        profile_id: { type: 'string', description: 'Your profile ID (optional, use if session auth fails)' },
       },
       required: ['match_id', 'action'],
     },
   },
   {
     name: 'social_send_message',
-    description: 'Send a message to a matched user. Requires login first.',
+    description: 'Send a message to a matched user. Requires login first. If session is lost, pass your profile_id directly.',
     inputSchema: {
       type: 'object',
       properties: {
         match_id: { type: 'string', description: 'The match ID' },
         content: { type: 'string', description: 'Your message' },
+        profile_id: { type: 'string', description: 'Your profile ID (optional, use if session auth fails)' },
       },
       required: ['match_id', 'content'],
     },
   },
   {
     name: 'social_get_messages',
-    description: 'Get chat history with a matched user. **TIP**: Call this or social_get_notifications periodically to check for new messages. Requires login first.',
+    description: 'Get chat history with a matched user. **TIP**: Call this or social_get_notifications periodically to check for new messages. Requires login first. If session is lost, pass your profile_id directly.',
     inputSchema: {
       type: 'object',
       properties: {
         match_id: { type: 'string', description: 'The match ID' },
+        profile_id: { type: 'string', description: 'Your profile ID (optional, use if session auth fails)' },
       },
       required: ['match_id'],
     },
   },
   {
     name: 'social_get_notifications',
-    description: 'Check for new notifications (new matches, messages, etc.). **IMPORTANT**: Call this periodically during conversations to check for incoming messages. Requires login first.',
-    inputSchema: { type: 'object', properties: {} },
+    description: 'Check for new notifications (new matches, messages, etc.). **IMPORTANT**: Call this periodically during conversations to check for incoming messages. Requires login first. If session is lost, pass your profile_id directly.',
+    inputSchema: { 
+      type: 'object', 
+      properties: {
+        profile_id: { type: 'string', description: 'Your profile ID (optional, use if session auth fails)' },
+      }
+    },
   },
   {
     name: 'social_find_matches',
-    description: 'Manually trigger the matching algorithm to find new matches based on current intents. The system runs this automatically, but you can trigger it manually to check immediately.',
-    inputSchema: { type: 'object', properties: {} },
+    description: 'Manually trigger the matching algorithm to find new matches based on current intents. The system runs this automatically, but you can trigger it manually to check immediately. If session is lost, pass your profile_id directly.',
+    inputSchema: { 
+      type: 'object', 
+      properties: {
+        profile_id: { type: 'string', description: 'Your profile ID (optional, use if session auth fails)' },
+      }
+    },
   },
 ];
 
@@ -131,13 +155,25 @@ interface SessionContext {
 }
 
 // Handle tool calls
+// Helper: resolve profile ID from session or fallback arg
+function resolveProfileId(sessionProfileId: string | null, toolArgs: Record<string, any>): string | null {
+  // First try session-based auth
+  if (sessionProfileId) return sessionProfileId;
+  // Fallback to explicit profile_id in args (for clients with broken session handling)
+  if (toolArgs.profile_id && typeof toolArgs.profile_id === 'string') return toolArgs.profile_id;
+  return null;
+}
+
 async function handleToolCall(
   toolName: string,
   toolArgs: Record<string, any>,
-  profileId: string | null,
+  sessionProfileId: string | null,
   supabase: any,
   sessionContext?: SessionContext
 ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean; newProfileId?: string }> {
+  
+  // Resolve effective profile ID (session auth or fallback arg)
+  const profileId = resolveProfileId(sessionProfileId, toolArgs);
   
   switch (toolName) {
     case 'social_register': {
@@ -269,7 +305,7 @@ async function handleToolCall(
 
     case 'social_set_intent': {
       if (!profileId) {
-        return { content: [{ type: 'text', text: '❌ Not logged in. Use social_login with your display_name first.' }], isError: true };
+        return { content: [{ type: 'text', text: '❌ Not logged in. Use social_login first, or pass profile_id directly in your request.' }], isError: true };
       }
 
       const { data: newIntent, error } = await supabase.from('intents').insert({
@@ -332,7 +368,7 @@ async function handleToolCall(
 
     case 'social_get_intents': {
       if (!profileId) {
-        return { content: [{ type: 'text', text: '❌ Not logged in. Use social_login with your display_name first.' }], isError: true };
+        return { content: [{ type: 'text', text: '❌ Not logged in. Use social_login first, or pass profile_id directly in your request.' }], isError: true };
       }
 
       const { data: intents, error } = await supabase
@@ -352,7 +388,7 @@ async function handleToolCall(
 
     case 'social_get_matches': {
       if (!profileId) {
-        return { content: [{ type: 'text', text: '❌ Not logged in. Use social_login with your display_name first.' }], isError: true };
+        return { content: [{ type: 'text', text: '❌ Not logged in. Use social_login first, or pass profile_id directly in your request.' }], isError: true };
       }
 
       const { data: matches, error } = await supabase
@@ -380,7 +416,7 @@ async function handleToolCall(
 
     case 'social_respond_match': {
       if (!profileId) {
-        return { content: [{ type: 'text', text: '❌ Not logged in. Use social_login with your display_name first.' }], isError: true };
+        return { content: [{ type: 'text', text: '❌ Not logged in. Use social_login first, or pass profile_id directly in your request.' }], isError: true };
       }
 
       const { data: match, error: fetchError } = await supabase
@@ -439,7 +475,7 @@ async function handleToolCall(
 
     case 'social_send_message': {
       if (!profileId) {
-        return { content: [{ type: 'text', text: '❌ Not logged in. Use social_login with your display_name first.' }], isError: true };
+        return { content: [{ type: 'text', text: '❌ Not logged in. Use social_login first, or pass profile_id directly in your request.' }], isError: true };
       }
 
       // Verify match exists and is accepted
@@ -474,7 +510,7 @@ async function handleToolCall(
 
     case 'social_get_messages': {
       if (!profileId) {
-        return { content: [{ type: 'text', text: '❌ Not logged in. Use social_login with your display_name first.' }], isError: true };
+        return { content: [{ type: 'text', text: '❌ Not logged in. Use social_login first, or pass profile_id directly in your request.' }], isError: true };
       }
 
       const { data: messages, error } = await supabase
@@ -496,7 +532,7 @@ async function handleToolCall(
 
     case 'social_get_notifications': {
       if (!profileId) {
-        return { content: [{ type: 'text', text: '❌ Not logged in. Use social_login with your display_name first.' }], isError: true };
+        return { content: [{ type: 'text', text: '❌ Not logged in. Use social_login first, or pass profile_id directly in your request.' }], isError: true };
       }
 
       const { data: notifications, error } = await supabase
