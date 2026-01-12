@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
-import { validateMcpApiKey } from '../_shared/auth.ts';
+import { authenticateRequest } from '../_shared/auth.ts';
 
 // This function finds matches ONLY for the authenticated user's intents
 serve(async (req) => {
@@ -10,19 +10,10 @@ serve(async (req) => {
   }
 
   try {
-    // Validate API key and get profile
-    const apiKey = req.headers.get('x-mcp-api-key');
-    if (!apiKey) {
+    const profileId = await authenticateRequest(req);
+    if (!profileId) {
       return new Response(
-        JSON.stringify({ error: 'API key required' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const { valid, profileId } = await validateMcpApiKey(apiKey);
-    if (!valid || !profileId) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid API key' }),
+        JSON.stringify({ error: 'Authentication required (API key or profile_id)' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

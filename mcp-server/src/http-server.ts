@@ -65,7 +65,7 @@ const TOOLS = [
   },
   {
     name: 'social_set_intent',
-    description: 'Set what kind of connections you are looking for.',
+    description: 'Set what kind of connections you are looking for. If session auth fails, pass profile_id directly.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -74,91 +74,117 @@ const TOOLS = [
           enum: ['professional', 'romance', 'friendship', 'expertise', 'sports', 'learning', 'other'],
         },
         description: { type: 'string', description: 'What you are looking for' },
+        profile_id: { type: 'string', description: 'Your profile ID (optional, use if session auth fails)' },
       },
       required: ['category', 'description'],
     },
   },
   {
     name: 'social_get_intents',
-    description: 'Get your current active intents.',
-    inputSchema: { type: 'object', properties: {} },
+    description: 'Get your current active intents. If session auth fails, pass profile_id directly.',
+    inputSchema: { 
+      type: 'object', 
+      properties: {
+        profile_id: { type: 'string', description: 'Your profile ID (optional, use if session auth fails)' },
+      } 
+    },
   },
   {
     name: 'social_get_matches',
-    description: 'Get your current matches and pending introductions.',
-    inputSchema: { type: 'object', properties: {} },
+    description: 'Get your current matches and pending introductions. If session auth fails, pass profile_id directly.',
+    inputSchema: { 
+      type: 'object', 
+      properties: {
+        profile_id: { type: 'string', description: 'Your profile ID (optional, use if session auth fails)' },
+      } 
+    },
   },
   {
     name: 'social_respond_match',
-    description: 'Accept or reject a match introduction.',
+    description: 'Accept or reject a match introduction. If session auth fails, pass profile_id directly.',
     inputSchema: {
       type: 'object',
       properties: {
         match_id: { type: 'string' },
         action: { type: 'string', enum: ['accept', 'reject'] },
+        profile_id: { type: 'string', description: 'Your profile ID (optional, use if session auth fails)' },
       },
       required: ['match_id', 'action'],
     },
   },
   {
     name: 'social_send_message',
-    description: 'Send a message to a matched user.',
+    description: 'Send a message to a matched user. If session auth fails, pass profile_id directly.',
     inputSchema: {
       type: 'object',
       properties: {
         match_id: { type: 'string' },
         content: { type: 'string' },
+        profile_id: { type: 'string', description: 'Your profile ID (optional, use if session auth fails)' },
       },
       required: ['match_id', 'content'],
     },
   },
   {
     name: 'social_get_messages',
-    description: 'Get chat history with a matched user.',
+    description: 'Get chat history with a matched user. If session auth fails, pass profile_id directly.',
     inputSchema: {
       type: 'object',
       properties: {
         match_id: { type: 'string' },
+        profile_id: { type: 'string', description: 'Your profile ID (optional, use if session auth fails)' },
       },
       required: ['match_id'],
     },
   },
   {
     name: 'social_get_notifications',
-    description: 'Check for new notifications.',
-    inputSchema: { type: 'object', properties: {} },
+    description: 'Check for new notifications. If session auth fails, pass profile_id directly.',
+    inputSchema: { 
+      type: 'object', 
+      properties: {
+        profile_id: { type: 'string', description: 'Your profile ID (optional, use if session auth fails)' },
+      } 
+    },
   },
   {
     name: 'social_find_matches',
-    description: 'Manually trigger the matching algorithm to find new matches for your intents.',
-    inputSchema: { type: 'object', properties: {} },
+    description: 'Manually trigger the matching algorithm to find new matches for your intents. If session auth fails, pass profile_id directly.',
+    inputSchema: { 
+      type: 'object', 
+      properties: {
+        profile_id: { type: 'string', description: 'Your profile ID (optional, use if session auth fails)' },
+      } 
+    },
   },
   {
     name: 'social_accept_match',
-    description: 'Accept a match introduction (shorthand for social_respond_match with accept action).',
+    description: 'Accept a match introduction (shorthand for social_respond_match with accept action). If session auth fails, pass profile_id directly.',
     inputSchema: {
       type: 'object',
       properties: {
         match_id: { type: 'string', description: 'The match ID to accept' },
+        profile_id: { type: 'string', description: 'Your profile ID (optional, use if session auth fails)' },
       },
       required: ['match_id'],
     },
   },
   {
     name: 'social_reject_match',
-    description: 'Reject a match introduction (shorthand for social_respond_match with reject action).',
+    description: 'Reject a match introduction (shorthand for social_respond_match with reject action). If session auth fails, pass profile_id directly.',
     inputSchema: {
       type: 'object',
       properties: {
         match_id: { type: 'string', description: 'The match ID to reject' },
+        profile_id: { type: 'string', description: 'Your profile ID (optional, use if session auth fails)' },
       },
       required: ['match_id'],
     },
   },
 ];
 
-// API call helper
-async function apiCall(endpoint: string, session: Session, options: RequestInit = {}) {
+// API call helper - accepts session with optional profileId override
+async function apiCall(endpoint: string, session: { apiKey: string | null; profileId: string | null }, options: RequestInit = {}) {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string> || {}),
@@ -166,6 +192,11 @@ async function apiCall(endpoint: string, session: Session, options: RequestInit 
 
   if (session.apiKey) {
     headers['x-mcp-api-key'] = session.apiKey;
+  }
+  
+  // Pass profile_id in header for backend auth when API key is not available
+  if (session.profileId) {
+    headers['x-mcp-profile-id'] = session.profileId;
   }
 
   const response = await fetch(`${API_URL}/${endpoint}`, { ...options, headers });
@@ -272,6 +303,15 @@ function setupRealtimeSubscriptions(sessionId: string, session: Session) {
     .subscribe();
 }
 
+// Helper: resolve profile ID from session or fallback arg
+function resolveProfileId(session: Session, args: Record<string, unknown>): string | null {
+  // First try session-based auth
+  if (session.profileId) return session.profileId;
+  // Fallback to explicit profile_id in args (for clients with broken session handling like Claude Web)
+  if (args.profile_id && typeof args.profile_id === 'string') return args.profile_id;
+  return null;
+}
+
 // Handle tool calls
 async function handleToolCall(
   name: string,
@@ -279,6 +319,8 @@ async function handleToolCall(
   sessionId: string,
   session: Session
 ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  // Resolve effective profile ID (session auth or fallback arg)
+  const effectiveProfileId = resolveProfileId(session, args);
   switch (name) {
     case 'social_register': {
       const mcpClientId = `mcp_${Date.now()}_${Math.random().toString(36).substring(7)}`;
@@ -380,11 +422,11 @@ async function handleToolCall(
     }
 
     case 'social_set_intent': {
-      if (!session.profileId) {
-        return { content: [{ type: 'text', text: '❌ Please register or login first.' }], isError: true };
+      if (!effectiveProfileId) {
+        return { content: [{ type: 'text', text: '❌ Please register or login first, or pass profile_id directly.' }], isError: true };
       }
 
-      const result = await apiCall('mcp-intent', session, {
+      const result = await apiCall('mcp-intent', { ...session, profileId: effectiveProfileId }, {
         method: 'POST',
         body: JSON.stringify({
           category: args.category,
@@ -398,11 +440,11 @@ async function handleToolCall(
     }
 
     case 'social_get_matches': {
-      if (!session.profileId) {
-        return { content: [{ type: 'text', text: '❌ Please register or login first.' }], isError: true };
+      if (!effectiveProfileId) {
+        return { content: [{ type: 'text', text: '❌ Please register or login first, or pass profile_id directly.' }], isError: true };
       }
 
-      const result = await apiCall('mcp-match', session, { method: 'GET' });
+      const result = await apiCall('mcp-match', { ...session, profileId: effectiveProfileId }, { method: 'GET' });
 
       if (!result.matches?.length) {
         return { content: [{ type: 'text', text: 'No matches yet.' }] };
@@ -418,11 +460,11 @@ async function handleToolCall(
     }
 
     case 'social_respond_match': {
-      if (!session.profileId) {
-        return { content: [{ type: 'text', text: '❌ Please register or login first.' }], isError: true };
+      if (!effectiveProfileId) {
+        return { content: [{ type: 'text', text: '❌ Please register or login first, or pass profile_id directly.' }], isError: true };
       }
 
-      const result = await apiCall('mcp-match', session, {
+      const result = await apiCall('mcp-match', { ...session, profileId: effectiveProfileId }, {
         method: 'POST',
         body: JSON.stringify({ match_id: args.match_id, action: args.action }),
       });
@@ -431,11 +473,11 @@ async function handleToolCall(
     }
 
     case 'social_send_message': {
-      if (!session.profileId) {
-        return { content: [{ type: 'text', text: '❌ Please register or login first.' }], isError: true };
+      if (!effectiveProfileId) {
+        return { content: [{ type: 'text', text: '❌ Please register or login first, or pass profile_id directly.' }], isError: true };
       }
 
-      await apiCall(`mcp-chat?match_id=${args.match_id}`, session, {
+      await apiCall(`mcp-chat?match_id=${args.match_id}`, { ...session, profileId: effectiveProfileId }, {
         method: 'POST',
         body: JSON.stringify({ content: args.content }),
       });
@@ -444,11 +486,11 @@ async function handleToolCall(
     }
 
     case 'social_get_messages': {
-      if (!session.profileId) {
-        return { content: [{ type: 'text', text: '❌ Please register or login first.' }], isError: true };
+      if (!effectiveProfileId) {
+        return { content: [{ type: 'text', text: '❌ Please register or login first, or pass profile_id directly.' }], isError: true };
       }
 
-      const result = await apiCall(`mcp-chat?match_id=${args.match_id}`, session, { method: 'GET' });
+      const result = await apiCall(`mcp-chat?match_id=${args.match_id}`, { ...session, profileId: effectiveProfileId }, { method: 'GET' });
 
       if (!result.messages?.length) {
         return { content: [{ type: 'text', text: 'No messages yet.' }] };
@@ -462,11 +504,11 @@ async function handleToolCall(
     }
 
     case 'social_get_notifications': {
-      if (!session.profileId) {
-        return { content: [{ type: 'text', text: '❌ Please register or login first.' }], isError: true };
+      if (!effectiveProfileId) {
+        return { content: [{ type: 'text', text: '❌ Please register or login first, or pass profile_id directly.' }], isError: true };
       }
 
-      const result = await apiCall('mcp-notifications', session, { method: 'GET' });
+      const result = await apiCall('mcp-notifications', { ...session, profileId: effectiveProfileId }, { method: 'GET' });
 
       if (!result.notifications?.length) {
         return { content: [{ type: 'text', text: '📭 No new notifications.' }] };
@@ -481,15 +523,15 @@ async function handleToolCall(
     }
 
     case 'social_get_intents': {
-      if (!session.profileId) {
-        return { content: [{ type: 'text', text: '❌ Please register or login first.' }], isError: true };
+      if (!effectiveProfileId) {
+        return { content: [{ type: 'text', text: '❌ Please register or login first, or pass profile_id directly.' }], isError: true };
       }
 
       // Query intents directly from database
       const { data: intents, error } = await supabase
         .from('intents')
         .select('*')
-        .eq('profile_id', session.profileId)
+        .eq('profile_id', effectiveProfileId)
         .eq('is_active', true);
 
       if (error) throw error;
@@ -503,12 +545,12 @@ async function handleToolCall(
     }
 
     case 'social_find_matches': {
-      if (!session.profileId) {
-        return { content: [{ type: 'text', text: '❌ Please register or login first.' }], isError: true };
+      if (!effectiveProfileId) {
+        return { content: [{ type: 'text', text: '❌ Please register or login first, or pass profile_id directly.' }], isError: true };
       }
 
       try {
-        const result = await apiCall('mcp-find-matches', session, { method: 'POST' });
+        const result = await apiCall('mcp-find-matches', { ...session, profileId: effectiveProfileId }, { method: 'POST' });
         return {
           content: [{
             type: 'text',
@@ -526,11 +568,11 @@ async function handleToolCall(
     }
 
     case 'social_accept_match': {
-      if (!session.profileId) {
-        return { content: [{ type: 'text', text: '❌ Please register or login first.' }], isError: true };
+      if (!effectiveProfileId) {
+        return { content: [{ type: 'text', text: '❌ Please register or login first, or pass profile_id directly.' }], isError: true };
       }
 
-      const result = await apiCall('mcp-match', session, {
+      const result = await apiCall('mcp-match', { ...session, profileId: effectiveProfileId }, {
         method: 'POST',
         body: JSON.stringify({ match_id: args.match_id, action: 'accept' }),
       });
@@ -539,11 +581,11 @@ async function handleToolCall(
     }
 
     case 'social_reject_match': {
-      if (!session.profileId) {
-        return { content: [{ type: 'text', text: '❌ Please register or login first.' }], isError: true };
+      if (!effectiveProfileId) {
+        return { content: [{ type: 'text', text: '❌ Please register or login first, or pass profile_id directly.' }], isError: true };
       }
 
-      const result = await apiCall('mcp-match', session, {
+      const result = await apiCall('mcp-match', { ...session, profileId: effectiveProfileId }, {
         method: 'POST',
         body: JSON.stringify({ match_id: args.match_id, action: 'reject' }),
       });
