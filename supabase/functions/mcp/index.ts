@@ -318,7 +318,7 @@ async function handleToolCall(
       if (error) throw new Error(`Failed to create intent: ${error.message}`);
 
       // Auto-trigger matching to find immediate matches
-      let matchesFound = 0;
+      const createdMatches: Array<{id: string, otherProfile: any, intent: any, score: number, reason: string}> = [];
       const { data: otherIntents } = await supabase
         .from('intents')
         .select('*, profile:profiles(*)')
@@ -338,30 +338,54 @@ async function handleToolCall(
           if (existingMatch?.length) continue;
 
           // Create match for same category
-          const { error: matchError } = await supabase
+          const matchScore = 0.6;
+          const matchReason = `Both looking for ${toolArgs.category} connections`;
+          const { data: newMatch, error: matchError } = await supabase
             .from('matches')
             .insert({
               intent_a_id: newIntent.id,
               intent_b_id: otherIntent.id,
               profile_a_id: profileId,
               profile_b_id: otherIntent.profile_id,
-              match_score: 0.6,
-              match_reason: `Both looking for ${toolArgs.category} connections`,
+              match_score: matchScore,
+              match_reason: matchReason,
               status: 'pending_a'
-            });
+            })
+            .select()
+            .single();
 
-          if (!matchError) matchesFound++;
+          if (!matchError && newMatch) {
+            createdMatches.push({
+              id: newMatch.id,
+              otherProfile: otherIntent.profile,
+              intent: otherIntent,
+              score: matchScore,
+              reason: matchReason
+            });
+          }
         }
       }
 
-      const matchMsg = matchesFound > 0 
-        ? `\n\n🎉 Found ${matchesFound} potential match(es)! Use social_get_matches to see them.`
-        : '';
+      // Build response with matches directly shown
+      let responseText = `✅ Intent created!\n\nCategory: ${toolArgs.category}\nDescription: ${toolArgs.description}`;
+      
+      if (createdMatches.length > 0) {
+        responseText += `\n\n🎉 Found ${createdMatches.length} potential match(es):\n`;
+        for (const m of createdMatches) {
+          const scorePercent = Math.round(m.score * 100);
+          responseText += `\n• **${m.otherProfile?.display_name || 'Unknown'}** (${scorePercent}% match)`;
+          responseText += `\n  Looking for: ${m.intent.description}`;
+          responseText += `\n  Match ID: ${m.id}`;
+          responseText += `\n  → Use social_respond_match with match_id="${m.id}" and action="accept" to connect\n`;
+        }
+      } else {
+        responseText += '\n\nNo matches found yet. We\'ll notify you when someone compatible joins!';
+      }
 
       return {
         content: [{
           type: 'text',
-          text: `✅ Intent created!\n\nCategory: ${toolArgs.category}\nDescription: ${toolArgs.description}${matchMsg}`,
+          text: responseText,
         }],
       };
     }
@@ -535,33 +559,93 @@ async function handleToolCall(
         return { content: [{ type: 'text', text: '❌ Not logged in. Use social_login first, or pass profile_id directly in your request.' }], isError: true };
       }
 
-      const { data: notifications, error } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('profile_id', profileId)
-        .eq('is_delivered', false)
+      const sections: string[] = [];
+
+      // a) New potential matches (pending_a where I'm profile_a, or pending_b where I'm profile_b)
+      const { data: pendingMatches } = await supabase
+        .from('matches')
+        .select(`*, profile_a:profiles!matches_profile_a_id_fkey(display_name), profile_b:profiles!matches_profile_b_id_fkey(display_name), intent_a:intents!matches_intent_a_id_fkey(description), intent_b:intents!matches_intent_b_id_fkey(description)`)
+        .or(`and(profile_a_id.eq.${profileId},status.eq.pending_a),and(profile_b_id.eq.${profileId},status.eq.pending_b)`)
         .order('created_at', { ascending: false });
 
-      if (error) throw new Error(`Failed to get notifications: ${error.message}`);
+      if (pendingMatches?.length) {
+        sections.push('🎉 **New Potential Matches** (awaiting your response):');
+        for (const m of pendingMatches) {
+          const isA = m.profile_a_id === profileId;
+          const otherName = isA ? m.profile_b?.display_name : m.profile_a?.display_name;
+          const theirIntent = isA ? m.intent_b?.description : m.intent_a?.description;
+          const score = Math.round(m.match_score * 100);
+          sections.push(`  • ${otherName} (${score}%): "${theirIntent}"\n    → social_respond_match match_id="${m.id}" action="accept"`);
+        }
+      }
 
-      if (notifications?.length) {
+      // b) Connection requests received (pending_b where I'm profile_b - they accepted, waiting for me)
+      const { data: connectionRequests } = await supabase
+        .from('matches')
+        .select(`*, profile_a:profiles!matches_profile_a_id_fkey(display_name), intent_a:intents!matches_intent_a_id_fkey(description)`)
+        .eq('profile_b_id', profileId)
+        .eq('status', 'pending_b')
+        .order('updated_at', { ascending: false });
+
+      if (connectionRequests?.length) {
+        sections.push('\n📩 **Connection Requests** (they accepted, your turn!):');
+        for (const m of connectionRequests) {
+          sections.push(`  • ${m.profile_a?.display_name} wants to connect!\n    → social_respond_match match_id="${m.id}" action="accept"`);
+        }
+      }
+
+      // c) Accepted connections (recently accepted, both sides agreed)
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { data: acceptedMatches } = await supabase
+        .from('matches')
+        .select(`*, profile_a:profiles!matches_profile_a_id_fkey(display_name), profile_b:profiles!matches_profile_b_id_fkey(display_name)`)
+        .or(`profile_a_id.eq.${profileId},profile_b_id.eq.${profileId}`)
+        .eq('status', 'accepted')
+        .gte('updated_at', oneDayAgo)
+        .order('updated_at', { ascending: false });
+
+      if (acceptedMatches?.length) {
+        sections.push('\n🤝 **Recently Connected** (you can now message!):');
+        for (const m of acceptedMatches) {
+          const isA = m.profile_a_id === profileId;
+          const otherName = isA ? m.profile_b?.display_name : m.profile_a?.display_name;
+          sections.push(`  • ${otherName} - Connection accepted!\n    → social_send_message match_id="${m.id}" content="Hi!"`);
+        }
+      }
+
+      // d) Unread messages
+      const { data: unreadMessages } = await supabase
+        .from('messages')
+        .select(`*, match:matches!inner(profile_a_id, profile_b_id), sender:profiles!messages_sender_profile_id_fkey(display_name)`)
+        .neq('sender_profile_id', profileId)
+        .is('read_at', null)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      // Filter to only messages in matches where this user is involved
+      const myUnreadMessages = unreadMessages?.filter((msg: any) => 
+        msg.match?.profile_a_id === profileId || msg.match?.profile_b_id === profileId
+      );
+
+      if (myUnreadMessages?.length) {
+        sections.push('\n💬 **New Messages**:');
+        for (const msg of myUnreadMessages) {
+          const preview = msg.content.length > 50 ? msg.content.substring(0, 50) + '...' : msg.content;
+          sections.push(`  • ${msg.sender?.display_name}: "${preview}"\n    → social_get_messages match_id="${msg.match_id}"`);
+        }
+
+        // Mark messages as read
         await supabase
-          .from('notifications')
-          .update({ is_delivered: true, delivered_at: new Date().toISOString() })
-          .in('id', notifications.map((n: any) => n.id));
+          .from('messages')
+          .update({ read_at: new Date().toISOString() })
+          .in('id', myUnreadMessages.map((m: any) => m.id));
       }
 
-      if (!notifications?.length) {
-        return { content: [{ type: 'text', text: '📭 No new notifications.' }] };
+      if (sections.length === 0) {
+        return { content: [{ type: 'text', text: '📭 No new notifications. All caught up!' }] };
       }
-      const list = notifications.map((n: any) => {
-        const icon = n.notification_type === 'new_match' ? '🎉' : 
-                    n.notification_type === 'match_accepted' ? '🤝' : 
-                    n.notification_type === 'new_message' ? '💬' : '📢';
-        return `${icon} ${n.notification_type.replace(/_/g, ' ')}`;
-      }).join('\n');
 
-      return { content: [{ type: 'text', text: `🔔 Notifications:\n\n${list}` }] };
+      return { content: [{ type: 'text', text: `🔔 **What's New:**\n\n${sections.join('\n')}` }] };
     }
 
     case 'social_find_matches': {
