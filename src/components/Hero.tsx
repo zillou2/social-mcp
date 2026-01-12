@@ -162,15 +162,7 @@ export const Hero = () => {
                     1
                   </div>
                   <div className="flex-1">
-                    <p className="font-medium mb-3">Go to Claude Settings → Connectors</p>
-                    <a 
-                      href="https://claude.ai/settings/connectors"
-                      target="_blank"
-                      className="inline-flex items-center gap-2 text-primary hover:underline font-mono text-sm"
-                    >
-                      claude.ai/settings/connectors
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
+                    <p className="font-medium">Go to Claude Settings → Connectors</p>
                   </div>
                 </div>
 
