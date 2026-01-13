@@ -768,8 +768,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ## Links
 
-- **Website:** [socialmcp.com](https://socialmcp.com)
-- **Documentation:** [docs.socialmcp.com](https://docs.socialmcp.com)
+- **Website:** [www.social-mcp.org](https://www.social-mcp.org)
 - **MCP Specification:** [modelcontextprotocol.io](https://modelcontextprotocol.io)
 
 ---
