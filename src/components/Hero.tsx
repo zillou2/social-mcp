@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Copy, Check, ExternalLink, Apple, Monitor, Users, Globe } from 'lucide-react';
+import { Copy, Check, ExternalLink, Apple, Monitor, Users, Globe, Github, BookOpen } from 'lucide-react';
 import { motion } from 'framer-motion';
 import heroPeople from '@/assets/hero-people.jpg';
 
@@ -79,17 +80,37 @@ export const Hero = () => {
           transition={{ duration: 0.6 }}
           className="max-w-lg"
         >
-          {/* Logo */}
+          {/* Logo and Nav */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.2 }}
-            className="flex items-center gap-2.5 mb-6"
+            className="flex items-center justify-between mb-6"
           >
-            <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
-              <Users className="w-5 h-5 text-primary-foreground" />
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
+                <Users className="w-5 h-5 text-primary-foreground" />
+              </div>
+              <span className="text-2xl font-mono tracking-tight">social-mcp</span>
             </div>
-            <span className="text-2xl font-mono tracking-tight">social-mcp</span>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" asChild className="h-8">
+                <Link to="/docs">
+                  <BookOpen className="w-4 h-4 mr-1.5" />
+                  Docs
+                </Link>
+              </Button>
+              <Button variant="ghost" size="icon" asChild className="h-8 w-8">
+                <a
+                  href="https://github.com/zillou2/social-mcp/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="GitHub"
+                >
+                  <Github className="w-4 h-4" />
+                </a>
+              </Button>
+            </div>
           </motion.div>
 
           {/* Main heading */}
